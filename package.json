@@ -1,0 +1,23 @@
+{
+  "name": "presik",
+  "version": "3.0.0",
+  "private": true,
+  "description": "Live in-class quizzes embedded directly into Marp slides: students answer from their phones, slides on the projector show the question and result, arrow keys control both the presentation and the quiz. The engine is separate from content (courses/slides/questions), so one install works with a single deck, a course, or several courses.",
+  "main": "server.js",
+  "bin": {
+    "presik": "bin/cli.js",
+    "presik-report": "bin/report.js"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "tunnel": "node server.js --tunnel",
+    "report": "node report.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.11.1",
+    "qrcode": "^1.5.4"
+  },
+  "devDependencies": {
+    "@marp-team/marp-cli": "^4.4.1"
+  }
+}

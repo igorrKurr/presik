@@ -1,0 +1,9 @@
+node_modules/
+.presik/
+**/deck.marp.html
+**/join-qr.svg
+.DS_Store
+
+# this repo doubles as an engine checkout and a content root for a real
+# course; keep the actual class content out of the engine's git history
+s01/

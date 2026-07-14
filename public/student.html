@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quiz</title>
+<!-- presik -->
+<style>
+  :root { --bg:#10161f; --panel:#1b2634; --panel2:#223041; --txt:#f1f5f9;
+          --muted:#94a3b8; --cyan:#38bdf8; --green:#4ade80; --red:#f87171; }
+  * { box-sizing:border-box; }
+  body { margin:0; padding:20px; background:var(--bg); color:var(--txt);
+         font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; -webkit-text-size-adjust:100%; }
+  .wrap { max-width:540px; margin:0 auto; }
+  .meta { color:var(--muted); font-size:14px; margin-bottom:12px; }
+  h1 { font-size:22px; line-height:1.35; margin:0 0 6px; }
+  .note { color:var(--muted); font-size:15px; margin-bottom:16px; }
+  button.opt { display:block; width:100%; text-align:left; background:var(--panel); color:var(--txt);
+    border:1px solid var(--panel2); border-radius:10px; padding:16px 18px; margin-bottom:10px;
+    font-size:17px; line-height:1.4; cursor:pointer; }
+  button.opt.picked { border-color:var(--cyan); background:var(--panel2); }
+  button.opt.correct { border-color:var(--green); }
+  button.opt.wrong { border-color:var(--red); opacity:.6; }
+  .tag { font-size:13px; color:var(--muted); margin-left:6px; }
+  .scale { display:flex; gap:8px; }
+  .scale button { flex:1; padding:20px 0; font-size:20px; background:var(--panel); color:var(--txt);
+    border:1px solid var(--panel2); border-radius:10px; }
+  .scale button.picked { border-color:var(--cyan); background:var(--panel2); }
+  textarea { width:100%; min-height:120px; background:var(--panel); color:var(--txt);
+    border:1px solid var(--panel2); border-radius:10px; padding:14px; font-size:16px;
+    font-family:inherit; resize:vertical; }
+  .send { width:100%; margin-top:10px; padding:15px; border-radius:10px; background:var(--cyan);
+    color:#0b1118; border:0; font-size:17px; font-weight:600; }
+  .status { margin-top:14px; padding:13px; border-radius:10px; background:var(--panel); font-size:15px; }
+  .status.ok { border:1px solid var(--green); }
+  .explain { margin-top:14px; padding:14px; border-radius:10px; background:var(--panel);
+    border:1px solid var(--panel2); font-size:15px; line-height:1.5; color:var(--muted); }
+  .wait { text-align:center; color:var(--muted); padding:60px 0; font-size:17px; line-height:1.6; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="meta" id="meta"></div>
+  <div id="app"><div class="wait">Waiting for it to start…</div></div>
+</div>
+<script>
+  let cid = localStorage.getItem('cid');
+  if (!cid) { cid = Math.random().toString(36).slice(2) + Date.now().toString(36); localStorage.setItem('cid', cid); }
+
+  const app = document.getElementById('app');
+  const meta = document.getElementById('meta');
+  const picked = {};
+  let lastQid = null;
+
+  function send(qid, value) {
+    picked[qid] = value;
+    fetch('/api/answer', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ qid, value, clientId: cid }) }).catch(() => {});
+  }
+
+  function render(s) {
+    meta.textContent = s.index >= 0 ? s.title + ' · ' + (s.index + 1) + ' / ' + s.total : s.title;
+    if (!s.question) {
+      app.innerHTML = '<div class="wait">Waiting for it to start…<br><span style="font-size:14px">Keep this page open.</span></div>';
+      lastQid = null; return;
+    }
+    const q = s.question;
+    if (q.id !== lastQid) { lastQid = q.id; app.innerHTML = ''; }
+    const my = picked[q.id];
+
+    let h = '<h1>' + q.text + '</h1>';
+    if (q.note) h += '<div class="note">' + q.note + '</div>';
+
+    if (q.type === 'text') {
+      h += my === undefined
+        ? '<textarea id="ta" placeholder="A few sentences in your own words"></textarea><button class="send" id="go">Send</button>'
+        : '<div class="status ok">Answer sent. Thanks.</div>';
+    } else if (q.type === 'scale') {
+      h += '<div class="scale">';
+      for (let i = q.min; i <= q.max; i++)
+        h += '<button class="' + (String(my) === String(i) ? 'picked' : '') + '" data-v="' + i + '"' + (s.revealed ? ' disabled' : '') + '>' + i + '</button>';
+      h += '</div>';
+      if (my !== undefined) h += '<div class="status ok">Recorded.</div>';
+    } else {
+      q.options.forEach((o) => {
+        let cls = 'opt';
+        if (my === o.id) cls += ' picked';
+        if (s.revealed && q.correct) {
+          if (q.correct.includes(o.id)) cls += ' correct';
+          else if (my === o.id) cls += ' wrong';
+        }
+        const tag = s.revealed && q.correct && q.correct.includes(o.id) ? '<span class="tag">correct</span>' : '';
+        h += '<button class="' + cls + '" data-v="' + o.id + '"' + (s.revealed ? ' disabled' : '') + '>' + o.text + tag + '</button>';
+      });
+      if (!s.revealed) h += my === undefined
+        ? '<div class="status">Pick an option.</div>'
+        : '<div class="status ok">Recorded. You can change it until the result is shown.</div>';
+    }
+    if (s.revealed && q.explain) h += '<div class="explain">' + q.explain + '</div>';
+    app.innerHTML = h;
+
+    app.querySelectorAll('button[data-v]').forEach((b) => {
+      b.onclick = () => { send(q.id, b.dataset.v); render(s); };
+    });
+    const go = document.getElementById('go');
+    if (go) go.onclick = () => {
+      const v = document.getElementById('ta').value.trim();
+      if (v) { send(q.id, v); render(s); }
+    };
+  }
+
+  const es = new EventSource('/api/stream');
+  es.onmessage = (e) => render(JSON.parse(e.data));
+  es.onerror = () => { meta.textContent = 'Reconnecting…'; };
+</script>
+</body>
+</html>

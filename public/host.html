@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quiz — teacher</title>
+<!-- presik -->
+<style>
+  :root { --bg:#10161f; --panel:#1b2634; --panel2:#223041; --txt:#f1f5f9;
+          --muted:#94a3b8; --cyan:#38bdf8; --green:#4ade80; --red:#f87171; --amber:#f5a524; }
+  * { box-sizing:border-box; }
+  body { margin:0; padding:30px 42px 110px; background:var(--bg); color:var(--txt);
+         font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+  .top { display:flex; justify-content:space-between; color:var(--muted); font-size:17px; }
+  h1 { font-size:36px; line-height:1.25; margin:12px 0 6px; }
+  .note { color:var(--muted); font-size:19px; margin-bottom:18px; }
+  .split { display:flex; gap:34px; align-items:flex-start; }
+  .main { flex:1; min-width:0; }
+  .side { width:240px; flex:none; text-align:center; }
+  .side img { width:100%; background:#fff; border-radius:10px; padding:8px; }
+  .side .url { margin-top:10px; font-size:14px; color:var(--cyan); word-break:break-all; }
+  .side .cap { margin-top:6px; font-size:13px; color:var(--muted); }
+  .bar { margin-bottom:13px; }
+  .barhead { display:flex; justify-content:space-between; font-size:20px; margin-bottom:5px; gap:14px; }
+  .barhead span:first-child { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .track { height:32px; background:var(--panel); border-radius:6px; overflow:hidden; }
+  .fill { height:100%; background:var(--panel2); transition:width .35s ease; }
+  .bar.correct .fill { background:var(--green); }
+  .bar.correct .barhead { color:var(--green); }
+  .bar.lead .fill { background:var(--cyan); }
+  .texts { display:flex; flex-wrap:wrap; gap:9px; margin-top:12px; }
+  .texts div { background:var(--panel); border:1px solid var(--panel2); border-radius:8px;
+               padding:9px 13px; font-size:15px; max-width:380px; }
+  .count { font-size:20px; color:var(--muted); margin-top:16px; }
+  .count b { color:var(--txt); }
+  .avg { color:var(--cyan); }
+  .hint { margin-top:18px; padding:15px 18px; border-radius:8px; background:var(--panel);
+          border:1px solid var(--amber); color:var(--amber); font-size:17px; line-height:1.5; }
+  .ctl { position:fixed; bottom:0; left:0; right:0; padding:13px 42px; background:#0b1118;
+         border-top:1px solid var(--panel2); display:flex; gap:9px; align-items:center; }
+  .ctl button { background:var(--panel); color:var(--txt); border:1px solid var(--panel2);
+                border-radius:8px; padding:10px 18px; font-size:15px; cursor:pointer; }
+  .ctl .note { color:var(--muted); font-size:14px; }
+  .ctl .danger { margin-left:auto; }
+  .wait { text-align:center; padding:70px 0; color:var(--muted); font-size:22px; line-height:1.6; }
+</style>
+</head>
+<body>
+  <div class="top"><span id="title"></span><span id="pos"></span></div>
+  <div class="split">
+    <div class="main" id="app"><div class="wait">The quiz hasn't started yet.</div></div>
+    <div class="side">
+      <img src="/qr.svg" alt="QR code">
+      <div class="url" id="url"></div>
+      <div class="cap">Scan or type in the address</div>
+      <div class="cap" id="ver" style="margin-top:14px;opacity:.5"></div>
+    </div>
+  </div>
+  <div class="ctl">
+    <span class="note">Control happens from the slides (<code>/slides?key=...</code>), with arrow keys. This page only shows the state.</span>
+    <button class="danger" id="clearBtn">Clear answers for this question</button>
+  </div>
+<script>
+  const KEY = new URL(location.href).searchParams.get('key');
+  const ctl = (action) => fetch('/api/control', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action, key: KEY })
+  });
+  document.getElementById('clearBtn').onclick = () => { if (confirm('Clear answers for this question?')) ctl('clear'); };
+
+  const app = document.getElementById('app');
+
+  function bars(items, revealed, correct) {
+    const total = items.reduce((a, i) => a + i.n, 0);
+    const max = Math.max(0, ...items.map((i) => i.n));
+    return items.map((i) => {
+      const pct = total ? Math.round((i.n / total) * 100) : 0;
+      const isC = revealed && correct && correct.includes(i.id);
+      const isL = !revealed && i.n === max && i.n > 0;
+      return '<div class="bar' + (isC ? ' correct' : '') + (isL ? ' lead' : '') + '">' +
+        '<div class="barhead"><span>' + i.text + '</span><span>' + (total ? i.n + ' · ' + pct + '%' : '') + '</span></div>' +
+        '<div class="track"><div class="fill" style="width:' + (total ? (i.n / total) * 100 : 0) + '%"></div></div></div>';
+    }).join('');
+  }
+
+  function render(s) {
+    document.getElementById('title').textContent = s.title;
+    document.getElementById('pos').textContent = s.index >= 0 ? (s.index + 1) + ' / ' + s.total : '';
+    document.getElementById('url').textContent = s.joinUrl || '';
+    document.getElementById('ver').textContent = 'v' + (s.version || '?');
+
+    if (!s.question) {
+      app.innerHTML = '<div class="wait">The quiz hasn\'t started yet.<br>' +
+        '<span style="font-size:17px">Students can already connect. Control happens from the slides.</span></div>';
+      return;
+    }
+    const q = s.question, st = s.stats || {};
+    let h = '<h1>' + q.text + '</h1>';
+    if (q.note) h += '<div class="note">' + q.note + '</div>';
+
+    if (q.type === 'text') {
+      if (st.texts && st.texts.length && s.revealed) {
+        h += '<div class="texts">' + st.texts.map((t) => '<div>' + t.replace(/</g, '&lt;') + '</div>').join('') + '</div>';
+      } else {
+        h += '<div class="note">Answers will show once revealed from the slides.</div>';
+      }
+    } else if (q.type === 'scale') {
+      const items = [];
+      for (let i = q.min; i <= q.max; i++) items.push({ id: String(i), text: String(i), n: (st.counts || {})[i] || 0 });
+      h += bars(items, s.revealed, null);
+      if (st.avg) h += '<div class="count">Average: <b class="avg">' + st.avg + '</b></div>';
+    } else {
+      h += bars(q.options.map((o) => ({ id: o.id, text: o.text, n: (st.counts || {})[o.id] || 0 })), s.revealed, q.correct);
+    }
+    h += '<div class="count">Answered: <b>' + (st.answered || 0) + '</b> of ' + (st.connected || 0) + ' connected</div>';
+    if (q.hint) h += '<div class="hint"><b>Where to go next:</b> ' + q.hint + '</div>';
+    app.innerHTML = h;
+  }
+
+  new EventSource('/api/stream?key=' + encodeURIComponent(KEY)).onmessage = (e) => render(JSON.parse(e.data));
+</script>
+</body>
+</html>

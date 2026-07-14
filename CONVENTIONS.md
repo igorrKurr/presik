@@ -87,7 +87,7 @@ With no argument, `presik`:
 - **`text`** — free-form answer (cold open, exit ticket). No `options` needed.
 - **`scale`** — a `min`..`max` scale (typically 1–5). The server computes the average.
 
-The file is validated at server startup — a JSON error or a malformed question stops the launch immediately, not in the middle of class. A starter example — `templates/questions.example.json`.
+The file is validated at server startup — a JSON error or a malformed question stops the launch immediately, not in the middle of class. `presik new <session>` scaffolds a starting `questions.json` (and `deck.marp.md`, unless `--questions-only`) from `templates/` for you — see below.
 
 ## `deck.marp.md` — live quiz markers
 
@@ -128,6 +128,17 @@ Everything that isn't content, but gets produced while running, lives in one pla
 ```
 
 The `runs`/`answers` tables have `course` and `session` columns derived from the session's path — so `report.js`/`presik-report` filters and compares both by session and by course, no matter how deeply the content is nested.
+
+## Scaffolding a new session
+
+`presik new <session>` (see `scaffold.js`) generates `questions.json` and `deck.marp.md` for a new session by copying `templates/questions.example.json` and `templates/deck.example.marp.md`, substituting the title. It never overwrites an existing `questions.json`/`deck.marp.md` — if either is already there, it errors out instead of touching them.
+
+```bash
+presik new s02                                # ./s02/questions.json + ./s02/deck.marp.md
+presik new web-dev/s02 --title "S02 — Status codes"
+presik new s02 --questions-only               # skip the deck, just the quiz
+presik new s02 --dir <path>                   # content root isn't the current directory
+```
 
 ## Optional flags (all override the default)
 

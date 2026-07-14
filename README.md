@@ -112,7 +112,13 @@ presik-report --csv > answers.csv                  # all answers as CSV — for 
 
 ## Your own class
 
-Create a folder (e.g. `s02/`) and put a `questions.json` in it, following `templates/questions.example.json`. Want slides too — copy `templates/deck.example.marp.md` there as well, as `deck.marp.md` (its markers already match the example questions).
+```bash
+presik new s02                                # scaffolds s02/questions.json + s02/deck.marp.md
+presik new web-dev/s02 --title "S02 — Status codes"
+presik new s02 --questions-only               # skip the deck, just the quiz
+```
+
+Generates both files from `templates/` — the deck's markers already match the example questions, ready to run as-is or edit. Refuses to touch a session that already has a `questions.json`/`deck.marp.md`, so it's always safe to run.
 
 The full `questions.json` schema, session/course naming rules, what the engine generates, and every optional flag — `CONVENTIONS.md`.
 

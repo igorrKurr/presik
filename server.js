@@ -8,6 +8,7 @@
  * public/ live in the package, content lives anywhere on disk (typically
  * wherever the command is run from). Content format — see CONVENTIONS.md.
  *
+ *   presik new s02                → scaffolds ./s02/ from templates/ (see scaffold.js)
  *   presik                        → lists all sessions under the current directory
  *   presik s01                    → runs ./s01/ (deck.marp.md + questions.json)
  *   presik web-dev/s01            → a session can live at any depth — it's just a path

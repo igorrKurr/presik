@@ -1,6 +1,6 @@
 {
   "name": "presik",
-  "version": "3.0.0",
+  "version": "3.1.0",
   "private": true,
   "description": "Live in-class quizzes embedded directly into Marp slides: students answer from their phones, slides on the projector show the question and result, arrow keys control both the presentation and the quiz. The engine is separate from content (courses/slides/questions), so one install works with a single deck, a course, or several courses.",
   "main": "server.js",

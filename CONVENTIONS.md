@@ -145,10 +145,13 @@ presik new s02 --dir <path>                   # content root isn't the current d
 ```bash
 presik <session> --dir <path>     # content root isn't the current directory
 presik <session> --port 8080
-presik <session> --key myword     # teacher key (default "teach")
+presik <session> --host 192.168.1.42  # advertised LAN address (default: auto-detected, skipping VPN/virtual)
+presik <session> --key myword     # teacher key (default: random per run — see below)
 presik <session> --group "3-A"    # group tag; without it — an interactive prompt in the terminal
 presik <session> --no-group       # don't ask for a group name
 presik <session> --tunnel         # public URL via cloudflared
 presik <session> --qr path.svg    # where to write join-qr.svg (default — the session folder)
 presik <session> --db path.db     # where the database is (default — .presik/data.db)
 ```
+
+**The teacher key.** With no `--key`, presik generates a random key each run and prints it in the banner; the `/host` and `/slides` control links embed it. Because the project is public, a fixed default (there used to be `teach`) would let anyone on the network drive or reset a class — hence random. Pass `--key <word>` when you want a stable, memorable key (e.g. reused across a course); the links are only as private as you keep them.

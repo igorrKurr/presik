@@ -1,3 +1,16 @@
+# From v3 → v4.0.0: no native module, random key, tougher runtime
+
+v4 is an **engine-only** change — your `questions.json` / `deck.marp.md` are untouched, and the SQLite database is picked up as-is (its schema grows itself). But two things change how you run it:
+
+- **Node 22.5+ is now required.** presik dropped the `better-sqlite3` native dependency in favour of Node's built-in `node:sqlite`, so `npm install` no longer compiles anything (no `node-gyp`, no C++ toolchain, no more `NODE_MODULE_VERSION` crashes after a Node upgrade). Re-run `npm install` to drop the old native package. On Node 22.5–23.3 presik re-execs itself with `--experimental-sqlite` automatically; on Node 24+ nothing is needed.
+- **The teacher key is random by default.** There is no more `teach` default — each run prints a fresh key, and the `/host` / `/slides` links embed it. Pin your own with `--key <word>` if you want it stable. Update any bookmarks/slides that hard-coded `?key=teach`.
+
+Also new, no action needed: a crash or laptop sleep mid-class now **resumes** on restart (same run, same answers, same current question); the slide-navigation control no longer depends on Marp's internal CSS classes (it follows the slide number in the URL); `--host` lets you override the advertised LAN address when auto-detection picks a VPN/Docker interface; and student answers are validated + rate-limited server-side.
+
+> Upgrading Marp: it's pinned exactly (`@marp-team/marp-cli`), because a slide build is part of the engine. Bump it deliberately and re-run a deck once after, rather than letting it float.
+
+---
+
 # From v2 → v3.0.0: engine separated from content
 
 v3 changes the structure of content files (not the questions/slides themselves, but where they live) so a single engine can serve one deck, one course, or several courses the same way. This is a breaking layout change — old paths no longer work.

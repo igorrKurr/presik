@@ -1,10 +1,14 @@
 // One SQLite database for the whole content root: all courses, all
 // sessions, all groups, all server runs. Purpose is analysis "across
-// multiple classes and courses" (report.js), not a replacement for the
-// live in-class state (that stays in process memory — see server.js).
+// multiple classes and courses" (report.js) AND crash/sleep recovery of the
+// live run (server.js rehydrates its in-memory state from here on restart).
+//
+// Uses node:sqlite (built into Node — no native module to compile, no
+// node-gyp, no ABI-mismatch crash after a Node upgrade). On Node 22.5–23.3
+// it needs the --experimental-sqlite flag; bin/ re-execs with it (sqlite-guard.js).
 const fs = require('fs');
 const path = require('path');
-const Database = require('better-sqlite3');
+const { DatabaseSync } = require('node:sqlite');
 
 function ensureColumn(db, table, column, ddl) {
   const cols = db.prepare(`PRAGMA table_info(${table})`).all();
@@ -13,8 +17,9 @@ function ensureColumn(db, table, column, ddl) {
 
 function openDb(dbPath) {
   fs.mkdirSync(path.dirname(dbPath), { recursive: true });
-  const db = new Database(dbPath);
-  db.pragma('journal_mode = WAL');
+  const db = new DatabaseSync(dbPath);
+  db.exec('PRAGMA journal_mode = WAL');
+  db.exec('PRAGMA busy_timeout = 4000');
   db.exec(`
     CREATE TABLE IF NOT EXISTS runs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -23,7 +28,9 @@ function openDb(dbPath) {
       group_name TEXT,
       title TEXT,
       started_at TEXT NOT NULL,
-      ended_at TEXT
+      ended_at TEXT,
+      cur_index INTEGER,
+      revealed INTEGER
     );
     CREATE TABLE IF NOT EXISTS answers (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -43,10 +50,13 @@ function openDb(dbPath) {
     CREATE INDEX IF NOT EXISTS idx_answers_session ON answers(session);
     CREATE INDEX IF NOT EXISTS idx_answers_group ON answers(group_name);
     CREATE INDEX IF NOT EXISTS idx_answers_qid ON answers(qid);
+    CREATE INDEX IF NOT EXISTS idx_answers_run ON answers(run_id);
   `);
-  // databases created before "course" existed (multi-course root) quietly grow the schema
+  // Databases created by older versions quietly grow the schema.
   ensureColumn(db, 'runs', 'course', 'course TEXT');
   ensureColumn(db, 'answers', 'course', 'course TEXT');
+  ensureColumn(db, 'runs', 'cur_index', 'cur_index INTEGER'); // live slide index (for resume)
+  ensureColumn(db, 'runs', 'revealed', 'revealed INTEGER'); // live revealed flag (for resume)
   db.exec('CREATE INDEX IF NOT EXISTS idx_answers_course ON answers(course)');
   return db;
 }

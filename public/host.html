@@ -40,6 +40,11 @@
          border-top:1px solid var(--panel2); display:flex; gap:9px; align-items:center; }
   .ctl button { background:var(--panel); color:var(--txt); border:1px solid var(--panel2);
                 border-radius:8px; padding:10px 18px; font-size:15px; cursor:pointer; }
+  .ctl button.primary { background:var(--cyan); color:#0b1118; border-color:var(--cyan);
+                        font-weight:600; min-width:160px; }
+  .ctl button:disabled { opacity:.4; cursor:default; }
+  .ctl .auto { color:var(--muted); font-size:14px; display:flex; align-items:center; gap:7px; cursor:pointer; }
+  .ctl .auto input { width:16px; height:16px; cursor:pointer; }
   .ctl .note { color:var(--muted); font-size:14px; }
   .ctl .danger { margin-left:auto; }
   .wait { text-align:center; padding:70px 0; color:var(--muted); font-size:22px; line-height:1.6; }
@@ -57,18 +62,80 @@
     </div>
   </div>
   <div class="ctl">
-    <span class="note">Control happens from the slides (<code>/slides?key=...</code>), with arrow keys. This page only shows the state.</span>
-    <button class="danger" id="clearBtn">Clear answers for this question</button>
+    <button id="backBtn" title="Space/→ advance · ←/PageUp back">◀ Back</button>
+    <button id="advBtn" class="primary">▶ Show Q1</button>
+    <label class="auto"><input type="checkbox" id="autoRev"> Auto-reveal when everyone's answered</label>
+    <span class="note" id="ctlHint"></span>
+    <button class="danger" id="clearBtn">Clear answers</button>
   </div>
 <script>
   const KEY = new URL(location.href).searchParams.get('key');
-  const ctl = (action) => fetch('/api/control', {
+  const ctl = (body) => fetch('/api/control', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action, key: KEY })
+    body: JSON.stringify(Object.assign({ key: KEY }, body))
   });
-  document.getElementById('clearBtn').onclick = () => { if (confirm('Clear answers for this question?')) ctl('clear'); };
+
+  // /host is the control surface — open it wherever you like. One primary
+  // button walks the natural rhythm (show → reveal → next question), composed
+  // from the same /api/control the Marp slides use, so a native PowerPoint /
+  // Keynote deck (driven by its own clicker) gets a one-tap quiz control.
+  let S = null;
+  const advBtn = document.getElementById('advBtn');
+  const backBtn = document.getElementById('backBtn');
+  const autoRev = document.getElementById('autoRev');
+  const ctlHint = document.getElementById('ctlHint');
+
+  function advancePlan(s) {
+    if (!s || !s.total) return null;
+    const last = s.total - 1;
+    if (s.index < 0) return { label: '▶ Show Q1', body: { action: 'goto', to: 0 } };
+    if (!s.revealed) return { label: '👁 Reveal', body: { action: 'reveal', to: s.index } };
+    if (s.index < last) return { label: '▶ Show Q' + (s.index + 2), body: { action: 'goto', to: s.index + 1 } };
+    return { label: '✓ Done', body: null };
+  }
+  function backPlan(s) {
+    if (!s) return null;
+    if (s.revealed) return { action: 'goto', to: s.index };       // hide the result (unreveal in place)
+    if (s.index > 0) return { action: 'reveal', to: s.index - 1 }; // step back to the previous, revealed
+    if (s.index === 0) return { action: 'prev' };                  // back to the idle "not started" state
+    return null;
+  }
+  function doAdvance() { const p = advancePlan(S); if (p && p.body) ctl(p.body); }
+  function doBack() { const b = backPlan(S); if (b) ctl(b); }
+
+  advBtn.onclick = doAdvance;
+  backBtn.onclick = doBack;
+  autoRev.onchange = () => ctl({ action: 'auto', autoReveal: autoRev.checked });
+  document.getElementById('clearBtn').onclick = () => { if (confirm('Clear answers for this question?')) ctl({ action: 'clear' }); };
+
+  // Space / → (and PageDown, which most presentation clickers send) = advance;
+  // ← / PageUp = back. So any device with /host focused — including a spare
+  // Bluetooth clicker — drives the quiz with the same forward gesture as slides.
+  document.addEventListener('keydown', (e) => {
+    const tag = (e.target.tagName || '').toLowerCase();
+    if (tag === 'input' || tag === 'textarea') return;
+    if (e.key === ' ' || e.key === 'ArrowRight' || e.key === 'PageDown') { e.preventDefault(); doAdvance(); }
+    else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); doBack(); }
+  });
+
+  function updateControls(s) {
+    const p = advancePlan(s);
+    advBtn.textContent = p ? p.label : '▶ Show Q1';
+    advBtn.disabled = !p || !p.body;
+    backBtn.disabled = !backPlan(s);
+    if (document.activeElement !== autoRev) autoRev.checked = !!s.autoReveal;
+    ctlHint.textContent = s.autoReveal ? 'reveals itself once all are in' : '';
+  }
 
   const app = document.getElementById('app');
+
+  // Everything below flows through innerHTML; escape author text and student
+  // free-text answers so markup can't be injected and plain "<", "&" render.
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
 
   function bars(items, revealed, correct) {
     const total = items.reduce((a, i) => a + i.n, 0);
@@ -78,12 +145,14 @@
       const isC = revealed && correct && correct.includes(i.id);
       const isL = !revealed && i.n === max && i.n > 0;
       return '<div class="bar' + (isC ? ' correct' : '') + (isL ? ' lead' : '') + '">' +
-        '<div class="barhead"><span>' + i.text + '</span><span>' + (total ? i.n + ' · ' + pct + '%' : '') + '</span></div>' +
+        '<div class="barhead"><span>' + esc(i.text) + '</span><span>' + (total ? i.n + ' · ' + pct + '%' : '') + '</span></div>' +
         '<div class="track"><div class="fill" style="width:' + (total ? (i.n / total) * 100 : 0) + '%"></div></div></div>';
     }).join('');
   }
 
   function render(s) {
+    S = s;
+    updateControls(s);
     document.getElementById('title').textContent = s.title;
     document.getElementById('pos').textContent = s.index >= 0 ? (s.index + 1) + ' / ' + s.total : '';
     document.getElementById('url').textContent = s.joinUrl || '';
@@ -95,12 +164,12 @@
       return;
     }
     const q = s.question, st = s.stats || {};
-    let h = '<h1>' + q.text + '</h1>';
-    if (q.note) h += '<div class="note">' + q.note + '</div>';
+    let h = '<h1>' + esc(q.text) + '</h1>';
+    if (q.note) h += '<div class="note">' + esc(q.note) + '</div>';
 
     if (q.type === 'text') {
       if (st.texts && st.texts.length && s.revealed) {
-        h += '<div class="texts">' + st.texts.map((t) => '<div>' + t.replace(/</g, '&lt;') + '</div>').join('') + '</div>';
+        h += '<div class="texts">' + st.texts.map((t) => '<div>' + esc(t) + '</div>').join('') + '</div>';
       } else {
         h += '<div class="note">Answers will show once revealed from the slides.</div>';
       }
@@ -108,12 +177,12 @@
       const items = [];
       for (let i = q.min; i <= q.max; i++) items.push({ id: String(i), text: String(i), n: (st.counts || {})[i] || 0 });
       h += bars(items, s.revealed, null);
-      if (st.avg) h += '<div class="count">Average: <b class="avg">' + st.avg + '</b></div>';
+      if (st.avg) h += '<div class="count">Average: <b class="avg">' + esc(st.avg) + '</b></div>';
     } else {
       h += bars(q.options.map((o) => ({ id: o.id, text: o.text, n: (st.counts || {})[o.id] || 0 })), s.revealed, q.correct);
     }
     h += '<div class="count">Answered: <b>' + (st.answered || 0) + '</b> of ' + (st.connected || 0) + ' connected</div>';
-    if (q.hint) h += '<div class="hint"><b>Where to go next:</b> ' + q.hint + '</div>';
+    if (q.hint) h += '<div class="hint"><b>Where to go next:</b> ' + esc(q.hint) + '</div>';
     app.innerHTML = h;
   }
 

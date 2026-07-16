@@ -166,7 +166,7 @@
     };
   }
 
-  // ---- driving the quiz via slide arrow keys (only if ?key= is present) ----
+  // ---- driving the quiz via slide navigation (only if ?key= is present) ----
   function control(body) {
     fetch('/api/control', {
       method: 'POST',
@@ -175,39 +175,53 @@
     }).catch(function () {});
   }
 
-  var lastActivatedKey = null;
-  function handleActivate(section) {
-    var qEl = section.querySelector('[data-quiz-question]');
-    var rEl = section.querySelector('[data-quiz-reveal]');
-    var key = qEl ? 'q:' + qEl.getAttribute('data-quiz-question') : rEl ? 'r:' + rEl.getAttribute('data-quiz-reveal') : null;
-    if (!key || key === lastActivatedKey) return;
-    lastActivatedKey = key;
-    if (qEl) {
-      var idx = QORDER.indexOf(qEl.getAttribute('data-quiz-question'));
-      if (idx >= 0) control({ action: 'goto', to: idx });
-    } else if (rEl) {
-      var ridx = QORDER.indexOf(rEl.getAttribute('data-quiz-reveal'));
-      if (ridx >= 0) control({ action: 'goto', to: ridx });
-      control({ action: 'reveal' });
-    }
+  // We drive the quiz off which slide is showing. Instead of scraping Marp
+  // bespoke's private CSS classes (which a marp-cli upgrade can silently
+  // rename), we use its *public* contract: the current slide number lives in
+  // location.hash (#1, #2, …) and each slide is <section id="<that number>">.
+  // Bespoke advances via history.pushState (which fires no hashchange event),
+  // so we poll the fragment — cheap, and fully decoupled from marp internals.
+  var SLIDE = {}; // slide number -> control action for landing on it
+  function slideNumberOf(el) {
+    var sec = el.closest && el.closest('section');
+    return sec ? parseInt(sec.id, 10) : 0;
+  }
+  function indexMarkers() {
+    SLIDE = {};
+    Array.prototype.forEach.call(document.querySelectorAll('[data-quiz-question]'), function (el) {
+      var n = slideNumberOf(el), idx = QORDER.indexOf(el.getAttribute('data-quiz-question'));
+      if (n && idx >= 0) SLIDE[n] = { action: 'goto', to: idx };
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('[data-quiz-reveal]'), function (el) {
+      // reveal carries `to`, so it's one atomic request (no goto+reveal race).
+      var n = slideNumberOf(el), idx = QORDER.indexOf(el.getAttribute('data-quiz-reveal'));
+      if (n && idx >= 0) SLIDE[n] = { action: 'reveal', to: idx };
+    });
+  }
+  function currentSlide() {
+    return parseInt((location.hash || '').slice(1), 10) || 1;
   }
 
   function watchNavigation() {
     if (!CFG.isHost || !CFG.key) return;
-    // Marp/bespoke wraps each slide in <svg><foreignObject><section>...</section></foreignObject></svg>
-    // and puts the "bespoke-marp-active" class on the <svg> itself, not the
-    // <section> — so we watch the whole deck container, not individual sections.
-    var parent = document.querySelector('.bespoke-marp-parent') || document.body;
-    var mo = new MutationObserver(function (mutations) {
-      mutations.forEach(function (m) {
-        if (m.attributeName !== 'class') return;
-        var el = m.target;
-        if (el.classList && el.classList.contains('bespoke-marp-active')) handleActivate(el);
-      });
-    });
-    mo.observe(parent, { attributes: true, attributeFilter: ['class'], subtree: true });
-    var active = parent.querySelector('.bespoke-marp-active');
-    if (active) handleActivate(active);
+    indexMarkers();
+    if (!Object.keys(SLIDE).length) {
+      console.warn('[presik] no quiz slides matched — check data-quiz-question/reveal ids against questions.json');
+    }
+    var lastSlide = null;
+    function onNav() {
+      var n = currentSlide();
+      if (n === lastSlide) return; // only act when the slide actually changes
+      lastSlide = n;
+      var m = SLIDE[n];
+      if (m) control(m); // a content slide leaves the current quiz state as-is
+    }
+    // hashchange/popstate cover back/forward and any hash-setting navigation;
+    // the poll covers pushState-based advance. Dedup makes overlap harmless.
+    window.addEventListener('hashchange', onNav);
+    window.addEventListener('popstate', onNav);
+    setInterval(onNav, 150);
+    onNav();
   }
 
   function mount() {

@@ -52,6 +52,15 @@
   const picked = {};
   let lastQid = null;
 
+  // Question/option/explain text is author-written, but it still goes through
+  // innerHTML — so escape it, both to be safe and so ordinary characters like
+  // "3 < 5" or "a & b" render literally instead of breaking the markup.
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
   function send(qid, value) {
     picked[qid] = value;
     fetch('/api/answer', { method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -68,8 +77,8 @@
     if (q.id !== lastQid) { lastQid = q.id; app.innerHTML = ''; }
     const my = picked[q.id];
 
-    let h = '<h1>' + q.text + '</h1>';
-    if (q.note) h += '<div class="note">' + q.note + '</div>';
+    let h = '<h1>' + esc(q.text) + '</h1>';
+    if (q.note) h += '<div class="note">' + esc(q.note) + '</div>';
 
     if (q.type === 'text') {
       h += my === undefined
@@ -90,13 +99,13 @@
           else if (my === o.id) cls += ' wrong';
         }
         const tag = s.revealed && q.correct && q.correct.includes(o.id) ? '<span class="tag">correct</span>' : '';
-        h += '<button class="' + cls + '" data-v="' + o.id + '"' + (s.revealed ? ' disabled' : '') + '>' + o.text + tag + '</button>';
+        h += '<button class="' + cls + '" data-v="' + esc(o.id) + '"' + (s.revealed ? ' disabled' : '') + '>' + esc(o.text) + tag + '</button>';
       });
       if (!s.revealed) h += my === undefined
         ? '<div class="status">Pick an option.</div>'
         : '<div class="status ok">Recorded. You can change it until the result is shown.</div>';
     }
-    if (s.revealed && q.explain) h += '<div class="explain">' + q.explain + '</div>';
+    if (s.revealed && q.explain) h += '<div class="explain">' + esc(q.explain) + '</div>';
     app.innerHTML = h;
 
     app.querySelectorAll('button[data-v]').forEach((b) => {

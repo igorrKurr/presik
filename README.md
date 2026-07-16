@@ -6,6 +6,8 @@ The engine (server, slide build, analytics) and the content (a specific class's 
 
 ## Install
 
+Needs **Node 22.5 or newer** (presik uses Node's built-in SQLite — there's no native module to compile, no C++ toolchain, no `node-gyp`).
+
 ```bash
 npm install                    # inside the engine folder — once
 npm link                       # makes the presik / presik-report commands available globally
@@ -31,19 +33,25 @@ If a group name wasn't passed via `--group` and the terminal is interactive, the
 Then the terminal shows the addresses:
 
 ```
-  presik v3.0.0
+  presik v4.0.0
   S1 — The Request's Journey  ·  session: s01  ·  questions: 9  ·  group: 3-A
 
   Students:  http://192.168.1.42:3000/
-  Teacher:   http://192.168.1.42:3000/host?key=teach
-  Slides:    http://192.168.1.42:3000/slides?key=teach  (without ?key= — view only, no control)
+  Teacher:   http://192.168.1.42:3000/host?key=85d39768
+  Slides:    http://192.168.1.42:3000/slides?key=85d39768  (without ?key= — view only, no control)
+
+  Key:       85d39768  (random this run; anyone with it controls the quiz — pin your own with --key)
 
   DB:        .presik/data.db  (for analysis — presik-report)
 ```
 
-Slides on the projector — **must be opened with `?key=...`**, otherwise arrow keys won't control the quiz (see below). The quiz isn't a separate page — it's embedded directly into the slides. `/host?key=...` doesn't control anything — it's just a live view synced with `/slides` (question, the `hint` field, distribution), handy to keep on your phone separate from the projector. The only action available there is "Clear answers for this question".
+The **teacher key is random each run** (the `?key=...` in the Teacher/Slides links above). It's what stops anyone else on the Wi-Fi from driving — or resetting — your class, so treat those links as private. Want a stable, memorable one (e.g. across a course)? Pass `--key yourword`.
 
-All flags (`--dir`, `--port`, `--key`, `--group`, `--tunnel`, `--qr`, `--db`) — in `CONVENTIONS.md`.
+Slides on the projector — **must be opened with `?key=...`**, otherwise arrow keys won't control the quiz (see below). The quiz isn't a separate page — it's embedded directly into the slides. `/host?key=...` is the teacher's live view — question, the `hint` field, distribution — handy to keep on your phone or a second screen; it's also the control surface (see the next section), so it does double duty for Marp and non-Marp decks alike.
+
+If students are handed a link they can't reach (a VPN or Docker interface can hijack the auto-detected address), pass `--host 192.168.x.x` with your real LAN address — the terminal hints at this when it spots more than one candidate.
+
+All flags (`--dir`, `--port`, `--key`, `--host`, `--group`, `--tunnel`, `--qr`, `--db`) — in `CONVENTIONS.md`.
 
 ## Live quiz — part of the slides themselves
 
@@ -70,7 +78,20 @@ In `deck.marp.md` — three empty markers (plain raw HTML; the deck is always bu
 - `data-quiz-reveal="<id>"` — the next slide: vote distribution, the correct answer (green), `explain`. Before reveal it shows a neutral "Coming up".
 - Question/reveal slides always have a small QR in the corner — for latecomers.
 
-**Arrow keys are the remote control, and the only place control happens.** With `/slides?key=...` open (with the teacher's key) and paging through the deck on the projector with arrow keys, activating a question slide makes it the current question, and activating a reveal slide shows the result. Going back hides the result again the same way. `/host` just silently follows along (via the same `/api/stream`) — there's nothing to control from there, so the two never drift out of sync. Reveal doesn't need everyone to answer first — even a single answer is enough to move on; if not everyone has answered, the result slide itself shows "Still answering: X of Y connected".
+**With Marp slides, arrow keys are the remote control.** With `/slides?key=...` open (with the teacher's key) and paging through the deck on the projector with arrow keys, activating a question slide makes it the current question, and activating a reveal slide shows the result. Going back hides the result again the same way. (Under the hood this just drives the same `/api/control` as the `/host` buttons below, so the two never drift.) Reveal doesn't need everyone to answer first — even a single answer is enough to move on; if not everyone has answered, the result slide itself shows "Still answering: X of Y connected".
+
+### Non-Marp decks (PowerPoint, Keynote, anything) — control from `/host`
+
+You don't have to use Marp. Present your existing PowerPoint / Keynote deck **as-is** (put the question text on a normal slide, as you would anyway) and drive the quiz from `/host`, opened wherever you like — a phone in your hand, a tablet, a second laptop. It's one primary button that always does the next thing and says so:
+
+```
+   ▶ Show Q2   →   👁 Reveal   →   ▶ Show Q3   →  …
+```
+
+Your clicker advances your slides as always; at each quiz moment you tap this one button (**Back** undoes a step). It also takes the keyboard — **Space / → / PageDown** advance, **← / PageUp** go back — so a spare presentation clicker pointed at the `/host` device drives the quiz with the same forward press as your slides.
+
+- **Auto-reveal** (optional checkbox, off by default): reveal a question automatically once every connected student has answered it — so most questions become a single tap.
+- The live layer students need on the projector (the join QR, the "answered N/​M" counter, the reveal distribution) is what `presik-report` and the `/host` view already show; a projector-friendly presentation view is the next thing on the roadmap.
 
 If `/slides` is opened **without** `?key=...` (say, by a student), the page only shows the current state (like `/`) and controls nothing — same as before reveal, nobody but the teacher sees the correct answer or the distribution.
 
@@ -87,7 +108,7 @@ University Wi-Fi often isolates clients, so phones can't see your laptop. Option
 
 Until a reveal slide is activated, students **see neither the correct answer nor the vote distribution**. This is intentional: otherwise they vote with the majority, and you lose the exact signal this is for.
 
-One student, one vote (an anonymous id in `localStorage`). They can change their mind up until reveal.
+One phone, one vote — an anonymous id kept in `localStorage`; they can change their mind up until reveal. This id is browser-generated, so it's not a hard identity: the server caps how many distinct ids and how fast answers can come from a single device, which keeps casual double-voting and idle mischief out of the distribution, but it isn't tamper-proof and isn't meant to be — this is a formative-feedback tool, not an exam.
 
 "Connected" only counts real students (`/`) — the `/slides` tab (including your own, on the projector or for previewing) doesn't count towards it. Dead connections (a phone losing network, a backgrounded tab) get cleaned up on a failed heartbeat, within ~25s at most — so the count doesn't accumulate "ghosts" over the course of a class.
 
@@ -97,6 +118,7 @@ One student, one vote (an anonymous id in `localStorage`). They can change their
 - `GET /api/export?key=…` — JSON with all answers from the current run.
 - When the server stops (`Ctrl+C`), answers also land in `.presik/results/<session>-<group>-<date>.json` — a handy one-off snapshot of a single class.
 - Every answer is written immediately (not just on exit) to a shared SQLite database, `.presik/data.db` — one file for the whole content root, all courses/sessions/groups together.
+- Because answers and the current position are written as they happen, **a crash or a laptop sleep isn't fatal**: restart `presik` on the same session and it resumes the in-progress run — same answers, same current question — instead of starting blank. (A clean `Ctrl+C` ends the run, so the *next* start is fresh.)
 
 Compare groups, sessions, or courses — `presik-report` (same database, no server needed):
 

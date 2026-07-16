@@ -91,7 +91,15 @@ You don't have to use Marp. Present your existing PowerPoint / Keynote deck **as
 Your clicker advances your slides as always; at each quiz moment you tap this one button (**Back** undoes a step). It also takes the keyboard — **Space / → / PageDown** advance, **← / PageUp** go back — so a spare presentation clicker pointed at the `/host` device drives the quiz with the same forward press as your slides.
 
 - **Auto-reveal** (optional checkbox, off by default): reveal a question automatically once every connected student has answered it — so most questions become a single tap.
-- The live layer students need on the projector (the join QR, the "answered N/​M" counter, the reveal distribution) is what `presik-report` and the `/host` view already show; a projector-friendly presentation view is the next thing on the roadmap.
+
+### The live layer on the projector — `/present`
+
+Your PowerPoint/Keynote slide shows the *question*; presik shows the *live* part next to it — the join QR, the "answered N/M" counter, and (after reveal) the distribution with the correct answer. Open **`/present`** (no key needed — it's view-only and follows what you reveal) and either:
+
+- put it **full-screen on a second display / at a quiz moment**, or
+- click **"⧉ Float over slides"** to pop it out as an always-on-top Picture-in-Picture window that hovers over your native fullscreen slideshow on the same machine (Chrome/Edge today; on other browsers, use the full-screen view).
+
+So the flow is: your deck for the question, `/host` in hand to drive it, `/present` (floating or on a second screen) for the QR and the result. Marp decks don't need `/present` — they render the same live layer inside the slides themselves.
 
 If `/slides` is opened **without** `?key=...` (say, by a student), the page only shows the current state (like `/`) and controls nothing — same as before reveal, nobody but the teacher sees the correct answer or the distribution.
 

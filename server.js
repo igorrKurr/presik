@@ -501,7 +501,17 @@ const server = http.createServer(async (req, res) => {
     return send(res, 200, 'text/html; charset=utf-8', fs.readFileSync(path.join(ENGINE_DIR, 'public/host.html')));
   }
 
+  // Projector "live layer" for non-Marp decks — view-only (no key): shows the
+  // join QR, the answer counter, and the distribution after reveal. Follows
+  // revealed state like a student; controls nothing.
+  if (p === '/present' || p === '/present/')
+    return send(res, 200, 'text/html; charset=utf-8', fs.readFileSync(path.join(ENGINE_DIR, 'public/present.html')));
+
   if (p === '/qr.svg') return send(res, 200, 'image/svg+xml', qrSvg);
+
+  // Browsers auto-request /favicon.ico; answer quietly so it doesn't 404 on
+  // every page (and clutter the console on the projector view).
+  if (p === '/favicon.ico') { res.writeHead(204); return res.end(); }
 
   if (p === '/embed.js') return send(res, 200, 'application/javascript; charset=utf-8', fs.readFileSync(path.join(ENGINE_DIR, 'public/embed.js')));
   if (p === '/embed.css') return send(res, 200, 'text/css; charset=utf-8', fs.readFileSync(path.join(ENGINE_DIR, 'public/embed.css')));
@@ -712,8 +722,9 @@ function banner() {
       '  ·  questions: ' + quiz.questions.length + (GROUP ? '  ·  group: ' + GROUP : '')
   );
   console.log('\n  Students:  ' + joinUrl);
-  console.log('  Teacher:   ' + joinUrl.replace(/\/$/, '') + '/host?key=' + KEY);
+  console.log('  Teacher:   ' + joinUrl.replace(/\/$/, '') + '/host?key=' + KEY + '  (control + live view)');
   if (deckExists) console.log('  Slides:    ' + joinUrl.replace(/\/$/, '') + '/slides?key=' + KEY + '  (without ?key= — view only, no control)');
+  console.log('  Projector: ' + joinUrl.replace(/\/$/, '') + '/present  (QR + live results — for a PowerPoint/Keynote deck)');
   if (!KEY_GIVEN)
     console.log('\n  Key:       ' + KEY + '  (random this run; anyone with it controls the quiz — pin your own with --key)');
   console.log('\n  DB:        ' + path.relative(process.cwd(), DB_FILE) + '  (for analysis — presik-report)');

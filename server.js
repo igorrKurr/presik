@@ -733,7 +733,7 @@ function banner() {
       '  ·  questions: ' + quiz.questions.length + (GROUP ? '  ·  group: ' + GROUP : '')
   );
   console.log('\n  Students:  ' + joinUrl);
-  console.log('  Teacher:   ' + joinUrl.replace(/\/$/, '') + '/host?key=' + KEY + '  (control + live view)');
+  console.log('  Teacher:   ' + joinUrl.replace(/\/$/, '') + '/host?key=' + KEY + '  (control + live view — keep private)');
   if (deckExists && MARP_AVAILABLE) console.log('  Slides:    ' + joinUrl.replace(/\/$/, '') + '/slides?key=' + KEY + '  (without ?key= — view only, no control)');
   else if (deckExists) console.log('  Slides:    (deck.marp.md found, but Marp isn\'t in this build — use /present, or install via npm for /slides)');
   console.log('  Projector: ' + joinUrl.replace(/\/$/, '') + '/present  (QR + live results — for a PowerPoint/Keynote deck)');

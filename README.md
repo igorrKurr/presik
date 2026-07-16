@@ -1,179 +1,263 @@
 # presik
 
-Live in-class quizzes, embedded directly into Marp slides. Students answer from their phones, slides on the projector show the question and the result, and arrow keys drive the presentation and the quiz at the same time.
+Live in-class quizzes for interactive lectures. Students answer from their phones, the projector shows the question and then the result, and you keep the whole room in sync — either by embedding the quiz **directly into Marp slides** (arrow keys drive the slides *and* the quiz together), or by running your existing **PowerPoint / Keynote** deck as-is with a one-button control in your hand.
 
-The engine (server, slide build, analytics) and the content (a specific class's slides and questions) are separate things. Install the engine once, then just drop `deck.marp.md` + `questions.json` into a folder — and it works whether that's a single deck, a whole course, or several courses at once. Full format contract — `CONVENTIONS.md`.
+It runs **on your own machine, on the classroom network** — no accounts, no cloud, no student data leaving the room.
+
+The engine (server, slide build, analytics) and your content (a class's slides and questions) are separate. Install the engine once, then drop a `questions.json` (and, optionally, a `deck.marp.md`) into a folder — it works whether that's a single quiz, a whole course, or several courses at once. Full format contract: [`CONVENTIONS.md`](CONVENTIONS.md).
+
+---
+
+## The mental model: three kinds of screen
+
+The single most important thing to understand is that **different people look at different screens, and they are *not* meant to show the same thing.**
+
+| Screen | URL | Who looks at it | On what device | What it shows | Can it control? |
+|---|---|---|---|---|---|
+| **Students** | `/` | each student | their own phone | the current question to answer; the result after you reveal | answer only |
+| **Your cockpit** | `/host?key=…` | **you, privately** | your phone / tablet / laptop | the question, the live distribution **even before reveal**, your private `hint`, and the controls | **yes — you drive the quiz here** |
+| **The room** | `/present` | the whole class | the projector (or a 2nd screen / floating window) | the join QR, the question, a live "answered N/M" counter, and — **only after you reveal** — the distribution + correct answer | no (view-only) |
+| **The room, Marp** | `/slides?key=…` | the whole class | the projector | your **Marp deck** with the quiz embedded in it; **arrow keys drive it** | yes, via arrow keys |
+
+### Why `/host` and `/present` both exist (they are not duplicates)
+
+They render some of the same things, but they have **opposite audiences and opposite rules** — that difference *is* the product:
+
+- **`/present` is for the room.** It deliberately **hides the distribution and the correct answer until you reveal** — otherwise students just vote with the visible majority and you lose the real signal. It has **no controls**. You put this on the projector.
+- **`/host` is for you, and only you.** It shows the distribution **immediately** (that's how you decide whether it's safe to move on), it shows your private **`hint`**, and it has the **buttons** to run the quiz. You keep this in your hand. **Never put `/host` on the projector** — it would spoil the vote and leak your notes.
+
+And the **room's screen comes from one of two places**, depending on your slides:
+
+- **Marp deck →** use **`/slides`**. The quiz is baked into your slides, so `/slides` *is* the room's screen and you don't need `/present`.
+- **PowerPoint / Keynote / anything else →** present your **native deck** for the question text, and use **`/present`** next to it for the live QR / counter / result.
+
+So a typical class uses **three screens at once**: the projector (`/slides` *or* your native deck + `/present`), your private `/host`, and every student's `/`.
+
+---
 
 ## Install
 
 Pick whichever fits — all three run the same engine:
 
-**1. Single-file binary — no Node, no install.** Download the `presik` executable for your OS from Releases, make it runnable, and go:
+**1. Single-file binary — no Node, no install.** Download the `presik` executable for your OS from Releases and run it:
 
 ```bash
-chmod +x presik            # macOS/Linux (Windows: just presik.exe)
-./presik                   # from a folder of sessions — same commands as below
+chmod +x presik            # macOS/Linux (on Windows it's just presik.exe)
+./presik                   # run it from a folder of sessions — commands below
 ```
 
-It bundles its own runtime, so there's nothing to install. Best for the PowerPoint/Keynote workflow (`/present` + `/host`). The one thing it leaves out is Marp slide-building (`/slides`) — for that, use one of the Node installs below. `presik new` and `presik report` work from the binary too.
+It bundles its own runtime, so there's nothing to install — ideal for the PowerPoint/Keynote workflow. The only thing the binary leaves out is **Marp slide-building** (`/slides`); for that use a Node install below. `presik new` and `presik report` work from the binary too.
 
-**2. npm / from source — needs Node 22.5+.** Includes Marp. presik uses Node's built-in SQLite, so there's still no native module to compile — no C++ toolchain, no `node-gyp`.
+**2. npm / from source — needs Node 22.5+.** Includes Marp. (presik uses Node's built-in SQLite, so there's still nothing to compile — no C++ toolchain, no `node-gyp`.)
 
 ```bash
 git clone <repo> && cd presik
-npm install                    # inside the engine folder — once
-npm link                       # makes the presik / presik-report commands available globally
+npm install                # once
+npm link                   # makes `presik` and `presik-report` global commands
 ```
 
-(Or skip `npm link` and run `node server.js ...` / `node report.js ...` directly.)
+(Or skip `npm link` and run `node server.js …` / `node report.js …` directly.)
 
 **Build your own binary** (for the current OS — cross-compiling isn't supported):
 
 ```bash
-npm run build                  # → dist/presik  (or dist/presik.exe on Windows)
+npm run build              # → dist/presik  (or dist/presik.exe on Windows)
 ```
 
-## Quick start
+---
+
+## Running it
 
 ```bash
-cd my-course/            # your content root: sessions with deck.marp.md + questions.json
-presik                   # no argument — lists sessions (or runs it directly if there's only one)
-presik s01               # runs the ./s01/ session
-presik web-dev/s01       # a session can live at any depth — it's just a path
+cd my-course/          # your "content root": folders that hold questions.json (+ optional deck.marp.md)
+presik                 # no argument: run the only session, or list what's available
+presik s01             # run the ./s01/ session
+presik web-dev/s01     # a session can live at any depth — it's just a path
 ```
 
-If a group name wasn't passed via `--group` and the terminal is interactive, the server asks right away:
+Unless you pass `--group` (or `--no-group`), it first asks for a group/cohort name to tag this run's results:
 
 ```
   Group/cohort name for this session (Enter — no name):
 ```
 
-Then the terminal shows the addresses:
+Then it prints the addresses you'll open — this is your map for the whole class:
 
 ```
   presik v4.0.0
   S1 — The Request's Journey  ·  session: s01  ·  questions: 9  ·  group: 3-A
 
   Students:  http://192.168.1.42:3000/
-  Teacher:   http://192.168.1.42:3000/host?key=85d39768
-  Slides:    http://192.168.1.42:3000/slides?key=85d39768  (without ?key= — view only, no control)
+  Teacher:   http://192.168.1.42:3000/host?key=85d39768   (control + live view — keep private)
+  Slides:    http://192.168.1.42:3000/slides?key=85d39768 (without ?key= — view only, no control)
+  Projector: http://192.168.1.42:3000/present             (QR + live results — for a PowerPoint/Keynote deck)
 
-  Key:       85d39768  (random this run; anyone with it controls the quiz — pin your own with --key)
+  Key:       85d39768   (random this run; anyone with it controls the quiz — pin your own with --key)
 
-  DB:        .presik/data.db  (for analysis — presik-report)
+  DB:        .presik/data.db   (for analysis — presik-report)
 ```
 
-The **teacher key is random each run** (the `?key=...` in the Teacher/Slides links above). It's what stops anyone else on the Wi-Fi from driving — or resetting — your class, so treat those links as private. Want a stable, memorable one (e.g. across a course)? Pass `--key yourword`.
+- The **`Slides:` line only appears if the session has a `deck.marp.md`** and Marp is available. A questions-only session skips it — you'll use `Projector:` (`/present`) instead.
+- The **teacher key is random every run**. It's what stops anyone else on the Wi-Fi from driving or resetting your class, so treat the `/host` and `/slides` links as private. Want a stable one (e.g. reused across a course)? Pass `--key yourword`.
+- If students get a link they can't reach (a VPN or Docker network can hijack the auto-detected address), pass `--host 192.168.x.x` with your real LAN address — the terminal hints at this when it sees more than one candidate.
 
-Slides on the projector — **must be opened with `?key=...`**, otherwise arrow keys won't control the quiz (see below). The quiz isn't a separate page — it's embedded directly into the slides. `/host?key=...` is the teacher's live view — question, the `hint` field, distribution — handy to keep on your phone or a second screen; it's also the control surface (see the next section), so it does double duty for Marp and non-Marp decks alike.
-
-If students are handed a link they can't reach (a VPN or Docker interface can hijack the auto-detected address), pass `--host 192.168.x.x` with your real LAN address — the terminal hints at this when it spots more than one candidate.
-
-All flags (`--dir`, `--port`, `--key`, `--host`, `--group`, `--tunnel`, `--qr`, `--db`) — in `CONVENTIONS.md`.
-
-## Live quiz — part of the slides themselves
-
-In `deck.marp.md` — three empty markers (plain raw HTML; the deck is always built with `--html`):
-
-```markdown
----
-
-<div data-quiz-join></div>
+All flags (`--dir`, `--port`, `--key`, `--host`, `--group`, `--tunnel`, `--qr`, `--db`) — see [`CONVENTIONS.md`](CONVENTIONS.md).
 
 ---
 
-<div data-quiz-question="s1-fragment"></div>
+## Scenario A — PowerPoint / Keynote, step by step
+
+You keep presenting in your usual app; presik adds the interactive layer beside it. **No conversion, no export.** This example uses a questions-only session (no Marp deck).
+
+### Set up once (before the class, at your desk)
+
+1. **Create the quiz file:**
+   ```bash
+   cd ~/courses/web-dev            # your content root
+   presik new lecture-05 --questions-only --title "S5 — HTTP status codes"
+   ```
+   This makes `lecture-05/questions.json` with example questions.
+2. **Edit `lecture-05/questions.json`** — replace the examples with your questions. Note each question's `id` (e.g. `q-404`); you'll want the question *text* on a slide in step 3. Format: [`CONVENTIONS.md`](CONVENTIONS.md).
+3. **In PowerPoint/Keynote, add one normal slide per question** where you want to ask it, with the question text on it (so the room can read it). Nothing special — just a slide you write yourself.
+
+### In class
+
+4. **Start presik** from your content root:
+   ```bash
+   cd ~/courses/web-dev
+   presik lecture-05 --group "3-A"      # or omit --group and type the name when asked
+   ```
+5. **Read the printed addresses.** You'll use `Teacher:` (your phone), `Projector:` (the room), and `Students:`. Note the random **Key** in the `?key=…`.
+6. **On the projector computer**, open **Chrome/Edge** to the **`Projector:` URL** (`http://…/present`). Click **"⧉ Float over slides"** (or drag the window onto a second display).
+7. **Start your PowerPoint/Keynote slideshow** (full-screen). The presik window floats on top / sits on the second screen, showing a big join QR.
+8. **On your phone**, open the **`Teacher:` URL** (`http://…/host?key=…`). This is your remote — keep it in your hand.
+9. **Students** scan the QR on the projector (or type the `Students:` URL). Watch the "connected" count climb on your phone.
+10. **Present normally with your clicker.** When you reach a question slide, tap **`▶ Show Q1`** on your phone. Students' phones light up; the projector shows the counter climbing.
+11. **When enough have answered** (you see it on your phone, along with your private `hint`), tap **`👁 Reveal`**. The projector now shows the distribution and the correct answer. Discuss.
+12. **Advance your deck** to the next question slide, tap **`▶ Show Q2`**, and repeat. (`◀ Back` undoes a step if you misclick.)
+13. **When class ends,** press **`Ctrl+C`** in the terminal. Answers are saved; analyse later with `presik report`.
+
+> **Fewer taps:** turn on the **Auto-reveal** checkbox on `/host` and each question reveals itself once everyone connected has answered — so step 11 happens on its own and each question is a single tap.
+>
+> **One clicker for both:** `/host` also responds to **Space / → / PageDown** (advance) and **← / PageUp** (back), so a spare Bluetooth clicker pointed at the phone/laptop showing `/host` drives the quiz with the same press as your slides.
 
 ---
 
-<div data-quiz-reveal="s1-fragment"></div>
+## Scenario B — a Marp deck, step by step
+
+Here the quiz lives *inside* your Markdown slides, and **paging through them is the remote control** — no separate button to tap. Best if you already write slides in Markdown.
+
+### Set up once (before the class)
+
+1. **Scaffold a session with a deck:**
+   ```bash
+   cd ~/courses/web-dev
+   presik new s01 --title "S1 — The request's journey"
+   ```
+   This makes `s01/questions.json` **and** `s01/deck.marp.md` with the markers already wired to the example questions.
+2. **Edit `s01/questions.json`** with your questions.
+3. **Edit `s01/deck.marp.md`** — write your slides normally, and for each question place two marker slides where you want the question and its result to appear (each on its own slide, between `---`):
+   ```markdown
+   ---
+   <div data-quiz-join></div>                       <!-- big "Scan to join" QR, once, near the start -->
+   ---
+   <div data-quiz-question="q-404"></div>            <!-- the question slide -->
+   ---
+   <div data-quiz-reveal="q-404"></div>              <!-- its result slide -->
+   ---
+   ```
+   The `id` in each marker must match a question `id` in `questions.json`.
+
+### In class
+
+4. **Start presik:**
+   ```bash
+   cd ~/courses/web-dev
+   presik s01 --group "3-A"
+   ```
+5. **Read the printed addresses.** (Because there's a deck, you now get a `Slides:` line.)
+6. **On the projector computer**, open the **`Slides:` URL — with the `?key=…`** (`http://…/slides?key=…`) and put the browser in full-screen. Opening it *with* the key is what lets the arrow keys control the quiz.
+7. **(Optional) On your phone**, open the **`Teacher:` URL** (`/host?key=…`) to watch the distribution and your private `hint` as you go. You don't need it to run the quiz — the slides do that — but the `hint` only shows here.
+8. **Students** scan the join-QR slide (or the `Students:` URL).
+9. **Present with the arrow keys**, as any slideshow. When you **arrow onto a question slide**, that question goes live and phones light up. When you **arrow onto its reveal slide**, the room sees the result. **Arrow back** hides it again. The slides and the quiz never drift — they're the same state underneath.
+10. **When class ends,** press **`Ctrl+C`**. Answers are saved.
+
+> You don't have to wait for everyone before revealing — one answer is enough to move on, and the reveal slide notes "Still answering: X of Y connected" if some haven't.
 
 ---
-```
 
-- `data-quiz-join` — a large "Scan to join" QR code. Placed once, wherever makes sense (typically right after the title slide, before the first question).
-- `data-quiz-question="<id>"` — a full-screen slide with the question text (and options, for choice) plus an "Answer on your phone" prompt with a live answer counter. `<id>` is the `id` of a question in this session's `questions.json`.
-- `data-quiz-reveal="<id>"` — the next slide: vote distribution, the correct answer (green), `explain`. Before reveal it shows a neutral "Coming up".
-- Question/reveal slides always have a small QR in the corner — for latecomers.
+## How the screens stay in sync
 
-**With Marp slides, arrow keys are the remote control.** With `/slides?key=...` open (with the teacher's key) and paging through the deck on the projector with arrow keys, activating a question slide makes it the current question, and activating a reveal slide shows the result. Going back hides the result again the same way. (Under the hood this just drives the same `/api/control` as the `/host` buttons below, so the two never drift.) Reveal doesn't need everyone to answer first — even a single answer is enough to move on; if not everyone has answered, the result slide itself shows "Still answering: X of Y connected".
+There's one source of truth: the **server's current state** (which question is live, whether it's revealed). Every screen subscribes to it over a live stream (`/api/stream`) and updates instantly.
 
-### Non-Marp decks (PowerPoint, Keynote, anything) — control from `/host`
+- **Marp `/slides`** reports the slide you're on (via the page's URL fragment — a stable, public part of Marp's output, not a fragile internal) and asks the server to make that question live / reveal it.
+- **`/host` buttons** (and keys) ask the server to do the same things.
+- Both go through the same control channel (`/api/control`, key-protected), so **they can be used together and never drift** — drive from the slides, or from `/host`, or both.
 
-You don't have to use Marp. Present your existing PowerPoint / Keynote deck **as-is** (put the question text on a normal slide, as you would anyway) and drive the quiz from `/host`, opened wherever you like — a phone in your hand, a tablet, a second laptop. It's one primary button that always does the next thing and says so:
+Only the teacher key can control. Opening `/slides` **without** `?key=` (say, a curious student) shows the room's view and controls nothing.
 
-```
-   ▶ Show Q2   →   👁 Reveal   →   ▶ Show Q3   →  …
-```
+### Who sees what
 
-Your clicker advances your slides as always; at each quiz moment you tap this one button (**Back** undoes a step). It also takes the keyboard — **Space / → / PageDown** advance, **← / PageUp** go back — so a spare presentation clicker pointed at the `/host` device drives the quiz with the same forward press as your slides.
+| | before you reveal | after you reveal |
+|---|---|---|
+| **Students `/`** and **the room `/present`** / `/slides` | the question only — **no** distribution, **no** correct answer | distribution + correct answer + `explain` |
+| **You, `/host`** | question **+ live distribution** + your `hint` | same, plus correct answer marked |
 
-- **Auto-reveal** (optional checkbox, off by default): reveal a question automatically once every connected student has answered it — so most questions become a single tap.
+This asymmetry is the whole point: the room can't vote with the majority, and you get the real signal in time to act on it.
 
-### The live layer on the projector — `/present`
+**One phone, one vote** — an anonymous id in the phone's `localStorage`; students can change their answer until you reveal. It's browser-generated, so it isn't a hard identity: the server caps how many distinct ids and how fast answers can come from one device, which keeps casual double-voting out of the distribution — but it isn't tamper-proof, and isn't meant to be. This is formative feedback, not an exam.
 
-Your PowerPoint/Keynote slide shows the *question*; presik shows the *live* part next to it — the join QR, the "answered N/M" counter, and (after reveal) the distribution with the correct answer. Open **`/present`** (no key needed — it's view-only and follows what you reveal) and either:
+**"Connected" counts only real students** (`/`). The projector (`/present`, `/slides`) and your `/host` don't inflate it. Dead connections (a phone off Wi-Fi, a backgrounded tab) drop within ~25s, so the count doesn't accumulate ghosts.
 
-- put it **full-screen on a second display / at a quiz moment**, or
-- click **"⧉ Float over slides"** to pop it out as an always-on-top Picture-in-Picture window that hovers over your native fullscreen slideshow on the same machine (Chrome/Edge today; on other browsers, use the full-screen view).
-
-So the flow is: your deck for the question, `/host` in hand to drive it, `/present` (floating or on a second screen) for the QR and the result. Marp decks don't need `/present` — they render the same live layer inside the slides themselves.
-
-If `/slides` is opened **without** `?key=...` (say, by a student), the page only shows the current state (like `/`) and controls nothing — same as before reveal, nobody but the teacher sees the correct answer or the distribution.
-
-On every startup, and again on every `/slides` request, the server checks whether `deck.marp.md` is newer than `deck.marp.html` and rebuilds it via a locally installed `marp-cli` if so. `deck.marp.html` is a build artifact — don't edit it by hand.
+---
 
 ## If the network won't cooperate
 
-University Wi-Fi often isolates clients, so phones can't see your laptop. Options:
+University Wi-Fi often isolates clients, so phones can't reach your laptop. Options:
 
-- **Share a hotspot from your phone**, connect your laptop to it. Simplest, always works.
-- **`presik s01 --tunnel`** — brings up a public `https://…trycloudflare.com` URL via [cloudflared](https://developers.cloudflare.com/cloudflare-tunnel/) and points the QR at it. Requires `cloudflared` installed; if it's missing, the server just stays on the local network.
+- **Share a hotspot from your phone** and connect your laptop to it. Simplest, always works.
+- **`presik s01 --tunnel`** — brings up a public `https://…trycloudflare.com` URL via [cloudflared](https://developers.cloudflare.com/cloudflare-tunnel/) and points the QR at it. Needs `cloudflared` installed; if it's missing, presik just stays on the local network.
 
-## Control and result visibility
-
-Until a reveal slide is activated, students **see neither the correct answer nor the vote distribution**. This is intentional: otherwise they vote with the majority, and you lose the exact signal this is for.
-
-One phone, one vote — an anonymous id kept in `localStorage`; they can change their mind up until reveal. This id is browser-generated, so it's not a hard identity: the server caps how many distinct ids and how fast answers can come from a single device, which keeps casual double-voting and idle mischief out of the distribution, but it isn't tamper-proof and isn't meant to be — this is a formative-feedback tool, not an exam.
-
-"Connected" only counts real students (`/`) — the `/slides` tab (including your own, on the projector or for previewing) doesn't count towards it. Dead connections (a phone losing network, a backgrounded tab) get cleaned up on a failed heartbeat, within ~25s at most — so the count doesn't accumulate "ghosts" over the course of a class.
+---
 
 ## Results and analytics
 
-- During class: the distribution on the teacher's screen.
-- `GET /api/export?key=…` — JSON with all answers from the current run.
-- When the server stops (`Ctrl+C`), answers also land in `.presik/results/<session>-<group>-<date>.json` — a handy one-off snapshot of a single class.
-- Every answer is written immediately (not just on exit) to a shared SQLite database, `.presik/data.db` — one file for the whole content root, all courses/sessions/groups together.
-- Because answers and the current position are written as they happen, **a crash or a laptop sleep isn't fatal**: restart `presik` on the same session and it resumes the in-progress run — same answers, same current question — instead of starting blank. (A clean `Ctrl+C` ends the run, so the *next* start is fresh.)
+- **During class:** the distribution on your `/host` screen.
+- **`GET /api/export?key=…`** — JSON of all answers in the current run.
+- **On `Ctrl+C`:** answers are also written to `.presik/results/<session>-<group>-<date>.json` — a one-off snapshot of a single class.
+- **Every answer is written immediately** to a shared SQLite database, `.presik/data.db` — one file for the whole content root (all courses/sessions/groups).
+- Because answers **and the current position** are saved as they happen, **a crash or a laptop sleep isn't fatal**: restart `presik` on the same session and it **resumes** the run — same answers, same current question. (A clean `Ctrl+C` ends the run, so the *next* start is fresh.)
 
-Compare groups, sessions, or courses — `presik-report` (same database, no server needed):
+Compare groups, sessions, or courses with `presik-report` (reads the same database, no server needed):
 
 ```bash
-presik-report                                   # list all runs
-presik-report --session s01                      # per question in s01: % correct, broken down by group
-presik-report --session web-dev/s01 --group "3-A"  # same path as when running the session
-presik-report --course web-dev                    # all sessions of one course
-presik-report --csv > answers.csv                  # all answers as CSV — for pandas/Excel/whatever
+presik-report                                      # list all runs
+presik-report --session s01                        # per question: % correct, broken down by group
+presik-report --session web-dev/s01 --group "3-A"  # one group
+presik-report --course web-dev                     # all sessions of one course
+presik-report --csv > answers.csv                  # everything as CSV — for pandas/Excel/…
 ```
 
-`.presik/` is in `.gitignore`: no personal data in a content repository (and there isn't any anyway — answers are anonymous).
+(From the packaged binary, the same thing is `presik report …`.) `.presik/` is git-ignored — no data leaks into a content repo, and there's none to leak anyway: answers are anonymous.
 
-## Your own class
+---
+
+## Making your own class
 
 ```bash
-presik new s02                                # scaffolds s02/questions.json + s02/deck.marp.md
+presik new s02                                 # scaffolds s02/questions.json + s02/deck.marp.md
 presik new web-dev/s02 --title "S02 — Status codes"
-presik new s02 --questions-only               # skip the deck, just the quiz
+presik new s02 --questions-only                # just the quiz, no Marp deck (for PowerPoint/Keynote)
 ```
 
-Generates both files from `templates/` — the deck's markers already match the example questions, ready to run as-is or edit. Refuses to touch a session that already has a `questions.json`/`deck.marp.md`, so it's always safe to run.
+It generates both files from templates — the deck's markers already match the example questions, ready to run as-is or edit. It won't overwrite an existing `questions.json`/`deck.marp.md`, so it's always safe to run.
 
-The full `questions.json` schema, session/course naming rules, what the engine generates, and every optional flag — `CONVENTIONS.md`.
+The full `questions.json` schema (question types `choice` / `text` / `scale`), naming rules, and every flag — [`CONVENTIONS.md`](CONVENTIONS.md).
 
-### About the `hint` field
+### The `hint` field — the thing that makes this worth it
 
-This is the main thing that sets this apart from a regular quiz. `hint` is visible **only to you**, on `/host`, under the distribution:
+`hint` is visible **only to you**, on `/host`, under the distribution:
 
 > *If a noticeable share picked 5xx on a question about 404 — that's the classic "404 = the server broke" confusion. Slow down here.*
 
-The point isn't to grade anyone — it's to see, in ten seconds, whether it's safe to move on.
+It's not about grading anyone. It's about seeing, in ten seconds, **whether it's safe to move on** — and knowing what to do if it isn't.

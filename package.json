@@ -15,12 +15,15 @@
     "start": "node server.js",
     "tunnel": "node server.js --tunnel",
     "report": "node report.js",
-    "test": "node --test"
+    "test": "node --test",
+    "build": "node build/build.js"
   },
   "dependencies": {
     "qrcode": "^1.5.4"
   },
   "devDependencies": {
-    "@marp-team/marp-cli": "4.4.1"
+    "@marp-team/marp-cli": "4.4.1",
+    "esbuild": "^0.28.1",
+    "postject": "^1.0.0-alpha.6"
   }
 }

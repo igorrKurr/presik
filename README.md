@@ -6,14 +6,32 @@ The engine (server, slide build, analytics) and the content (a specific class's 
 
 ## Install
 
-Needs **Node 22.5 or newer** (presik uses Node's built-in SQLite — there's no native module to compile, no C++ toolchain, no `node-gyp`).
+Pick whichever fits — all three run the same engine:
+
+**1. Single-file binary — no Node, no install.** Download the `presik` executable for your OS from Releases, make it runnable, and go:
 
 ```bash
+chmod +x presik            # macOS/Linux (Windows: just presik.exe)
+./presik                   # from a folder of sessions — same commands as below
+```
+
+It bundles its own runtime, so there's nothing to install. Best for the PowerPoint/Keynote workflow (`/present` + `/host`). The one thing it leaves out is Marp slide-building (`/slides`) — for that, use one of the Node installs below. `presik new` and `presik report` work from the binary too.
+
+**2. npm / from source — needs Node 22.5+.** Includes Marp. presik uses Node's built-in SQLite, so there's still no native module to compile — no C++ toolchain, no `node-gyp`.
+
+```bash
+git clone <repo> && cd presik
 npm install                    # inside the engine folder — once
 npm link                       # makes the presik / presik-report commands available globally
 ```
 
-(Or without `npm link` — run `node /path/to/engine/server.js ...` or `node /path/to/engine/report.js ...` directly.)
+(Or skip `npm link` and run `node server.js ...` / `node report.js ...` directly.)
+
+**Build your own binary** (for the current OS — cross-compiling isn't supported):
+
+```bash
+npm run build                  # → dist/presik  (or dist/presik.exe on Windows)
+```
 
 ## Quick start
 

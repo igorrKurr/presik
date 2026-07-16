@@ -11,8 +11,7 @@
 // =====================================================================
 const fs = require('fs');
 const path = require('path');
-
-const ENGINE_DIR = __dirname;
+const { readAssetText } = require('./assets');
 
 // bin/cli.js dispatches here with the leading "new" still in argv when run
 // as `presik new ...`; running this file directly (`node scaffold.js s02`)
@@ -71,18 +70,12 @@ if (already.length) {
 
 fs.mkdirSync(SESSION_DIR, { recursive: true });
 
-const questionsTpl = fs
-  .readFileSync(path.join(ENGINE_DIR, 'templates', 'questions.example.json'), 'utf8')
-  .split('S00 — Class name')
-  .join(title);
+const questionsTpl = readAssetText('templates/questions.example.json').split('S00 — Class name').join(title);
 fs.writeFileSync(QUESTIONS_FILE, questionsTpl);
 console.log('  created ' + path.relative(CONTENT_DIR, QUESTIONS_FILE));
 
 if (withDeck) {
-  const deckTpl = fs
-    .readFileSync(path.join(ENGINE_DIR, 'templates', 'deck.example.marp.md'), 'utf8')
-    .split('S00 — Class name')
-    .join(title);
+  const deckTpl = readAssetText('templates/deck.example.marp.md').split('S00 — Class name').join(title);
   fs.writeFileSync(DECK_FILE, deckTpl);
   console.log('  created ' + path.relative(CONTENT_DIR, DECK_FILE));
 }

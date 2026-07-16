@@ -7,7 +7,12 @@ function ensureSqlite() {
     require('node:sqlite');
     return; // available directly, or we're already the re-exec'd child
   } catch (_) {
-    if (process.env.PRESIK_SQLITE_REEXEC) {
+    // A packaged binary can't re-exec itself with a node flag; it's also built
+    // with a modern Node where node:sqlite is flagless, so this branch is only
+    // reached if something is genuinely wrong — fail clearly instead of looping.
+    let isSea = false;
+    try { isSea = require('node:sea').isSea(); } catch (_) {}
+    if (process.env.PRESIK_SQLITE_REEXEC || isSea) {
       console.error('\n  presik needs Node 22.5 or newer (for built-in SQLite).');
       console.error('  Your Node: ' + process.version + '  →  please upgrade Node.\n');
       process.exit(1);

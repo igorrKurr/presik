@@ -34,6 +34,7 @@ const { spawn, execFileSync } = require('child_process');
 const QRCode = require('qrcode');
 const { openDb } = require('./db');
 const { groupSlug, bestHostIp, rankHostIps, validateAnswer } = require('./lib');
+const { readAssetText } = require('./assets');
 
 const ENGINE_DIR = __dirname;
 const VERSION = require('./package.json').version;
@@ -197,6 +198,11 @@ quiz.questions.forEach((q, i) => {
 // a .cmd on Windows, and execFileSync on the extensionless name can't launch
 // the .cmd — so the old approach silently broke slide builds on Windows.
 const MARP_JS = path.join(ENGINE_DIR, 'node_modules', '@marp-team', 'marp-cli', 'marp-cli.js');
+// Marp is a devDependency and only needed to build /slides from deck.marp.md.
+// It's absent in the packaged single-file binary (and when installed with
+// --omit=dev), so slide-building degrades gracefully: everything else — phones,
+// /host, /present — works, and /slides explains how to get Marp support.
+const MARP_AVAILABLE = fs.existsSync(MARP_JS);
 const deckExists = fs.existsSync(DECK_FILE);
 
 // Injects a link to embed.js/css plus a marker where the server will splice
@@ -494,18 +500,18 @@ const server = http.createServer(async (req, res) => {
   const p = url.pathname;
   const isHost = url.searchParams.get('key') === KEY;
 
-  if (p === '/') return send(res, 200, 'text/html; charset=utf-8', fs.readFileSync(path.join(ENGINE_DIR, 'public/student.html')));
+  if (p === '/') return send(res, 200, 'text/html; charset=utf-8', readAssetText('public/student.html'));
 
   if (p === '/host') {
     if (!isHost) return send(res, 403, 'text/plain; charset=utf-8', 'Add ?key=...');
-    return send(res, 200, 'text/html; charset=utf-8', fs.readFileSync(path.join(ENGINE_DIR, 'public/host.html')));
+    return send(res, 200, 'text/html; charset=utf-8', readAssetText('public/host.html'));
   }
 
   // Projector "live layer" for non-Marp decks — view-only (no key): shows the
   // join QR, the answer counter, and the distribution after reveal. Follows
   // revealed state like a student; controls nothing.
   if (p === '/present' || p === '/present/')
-    return send(res, 200, 'text/html; charset=utf-8', fs.readFileSync(path.join(ENGINE_DIR, 'public/present.html')));
+    return send(res, 200, 'text/html; charset=utf-8', readAssetText('public/present.html'));
 
   if (p === '/qr.svg') return send(res, 200, 'image/svg+xml', qrSvg);
 
@@ -513,11 +519,16 @@ const server = http.createServer(async (req, res) => {
   // every page (and clutter the console on the projector view).
   if (p === '/favicon.ico') { res.writeHead(204); return res.end(); }
 
-  if (p === '/embed.js') return send(res, 200, 'application/javascript; charset=utf-8', fs.readFileSync(path.join(ENGINE_DIR, 'public/embed.js')));
-  if (p === '/embed.css') return send(res, 200, 'text/css; charset=utf-8', fs.readFileSync(path.join(ENGINE_DIR, 'public/embed.css')));
+  if (p === '/embed.js') return send(res, 200, 'application/javascript; charset=utf-8', readAssetText('public/embed.js'));
+  if (p === '/embed.css') return send(res, 200, 'text/css; charset=utf-8', readAssetText('public/embed.css'));
 
   if (p === '/slides' || p === '/slides/') {
     if (!deckExists) return send(res, 404, 'text/plain; charset=utf-8', 'No deck.marp.md for session "' + name + '"');
+    if (!MARP_AVAILABLE)
+      return send(res, 501, 'text/plain; charset=utf-8',
+        'Marp slide-building isn\'t available in this build.\n' +
+        'Present your PowerPoint/Keynote deck as-is and use /present + /host instead,\n' +
+        'or install presik via npm (which includes Marp) for the /slides path.');
     try {
       const htmlPath = ensureSlideHtml();
       let html = fs.readFileSync(htmlPath, 'utf8');
@@ -723,7 +734,8 @@ function banner() {
   );
   console.log('\n  Students:  ' + joinUrl);
   console.log('  Teacher:   ' + joinUrl.replace(/\/$/, '') + '/host?key=' + KEY + '  (control + live view)');
-  if (deckExists) console.log('  Slides:    ' + joinUrl.replace(/\/$/, '') + '/slides?key=' + KEY + '  (without ?key= — view only, no control)');
+  if (deckExists && MARP_AVAILABLE) console.log('  Slides:    ' + joinUrl.replace(/\/$/, '') + '/slides?key=' + KEY + '  (without ?key= — view only, no control)');
+  else if (deckExists) console.log('  Slides:    (deck.marp.md found, but Marp isn\'t in this build — use /present, or install via npm for /slides)');
   console.log('  Projector: ' + joinUrl.replace(/\/$/, '') + '/present  (QR + live results — for a PowerPoint/Keynote deck)');
   if (!KEY_GIVEN)
     console.log('\n  Key:       ' + KEY + '  (random this run; anyone with it controls the quiz — pin your own with --key)');
@@ -767,7 +779,7 @@ server.on('error', (e) => {
   server.listen(PORT, async () => {
     await setJoinUrl('http://' + localIp() + ':' + PORT + '/');
 
-    if (deckExists) {
+    if (deckExists && MARP_AVAILABLE) {
       try {
         ensureSlideHtml();
       } catch (e) {

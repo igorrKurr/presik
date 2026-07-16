@@ -1,0 +1,16 @@
+{
+  "main": "dist/bundle.cjs",
+  "output": "dist/sea-prep.blob",
+  "disableExperimentalSEAWarning": true,
+  "useSnapshot": false,
+  "useCodeCache": false,
+  "assets": {
+    "public/student.html": "public/student.html",
+    "public/host.html": "public/host.html",
+    "public/present.html": "public/present.html",
+    "public/embed.js": "public/embed.js",
+    "public/embed.css": "public/embed.css",
+    "templates/questions.example.json": "templates/questions.example.json",
+    "templates/deck.example.marp.md": "templates/deck.example.marp.md"
+  }
+}

@@ -1,0 +1,36 @@
+name: release
+
+# Build the single-file `presik` binary for each OS and upload it. Runs on a
+# version tag (v*), or manually. GitHub's setup-node provides official Node
+# builds (which carry the SEA fuse), so build.js uses them directly — no
+# runtime download needed on CI.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            asset: presik-linux-x64
+          - os: macos-latest
+            asset: presik-macos-arm64
+          - os: windows-latest
+            asset: presik-win-x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+      - run: npm ci
+      - run: npm run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: dist/presik*
+          if-no-files-found: error

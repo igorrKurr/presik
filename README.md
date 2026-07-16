@@ -16,7 +16,7 @@ The single most important thing to understand is that **different people look at
 |---|---|---|---|---|---|
 | **Students** | `/` | each student | their own phone | the current question to answer; the result after you reveal | answer only |
 | **Your cockpit** | `/host?key=…` | **you, privately** | your phone / tablet / laptop | the question, the live distribution **even before reveal**, your private `hint`, and the controls | **yes — you drive the quiz here** |
-| **The room** | `/present` | the whole class | the projector (or a 2nd screen / floating window) | the join QR, the question, a live "answered N/M" counter, and — **only after you reveal** — the distribution + correct answer | no (view-only) |
+| **The room** | `/present` | the whole class | the projector | your **own deck, screen-captured**, with the quiz composited on top: join QR, a live "answered N/M" counter, and — **only after you reveal** — the distribution + correct answer | no (view-only) |
 | **The room, Marp** | `/slides?key=…` | the whole class | the projector | your **Marp deck** with the quiz embedded in it; **arrow keys drive it** | yes, via arrow keys |
 
 ### Why `/host` and `/present` both exist (they are not duplicates)
@@ -29,9 +29,9 @@ They render some of the same things, but they have **opposite audiences and oppo
 And the **room's screen comes from one of two places**, depending on your slides:
 
 - **Marp deck →** use **`/slides`**. The quiz is baked into your slides, so `/slides` *is* the room's screen and you don't need `/present`.
-- **PowerPoint / Keynote / anything else →** present your **native deck** for the question text, and use **`/present`** next to it for the live QR / counter / result.
+- **PowerPoint / Keynote / anything else →** use **`/present`**: it screen-captures your own deck and composites the quiz on top, so *it* becomes the room's screen (your slide + the live layer, one surface).
 
-So a typical class uses **three screens at once**: the projector (`/slides` *or* your native deck + `/present`), your private `/host`, and every student's `/`.
+So a typical class uses **three screens at once**: the projector (`/slides` *or* `/present`), your private `/host`, and every student's `/`.
 
 ---
 
@@ -120,6 +120,10 @@ You keep presenting in your usual app; presik adds the interactive layer beside 
 2. **Edit `lecture-05/questions.json`** — replace the examples with your questions. Note each question's `id` (e.g. `q-404`); you'll want the question *text* on a slide in step 3. Format: [`CONVENTIONS.md`](CONVENTIONS.md).
 3. **In PowerPoint/Keynote, add one normal slide per question** where you want to ask it, with the question text on it (so the room can read it). Nothing special — just a slide you write yourself.
 
+### Display setup (do this once)
+
+presik projects *your* slide by screen-capturing it, so the cleanest arrangement is the normal "presenter" one: **extend** your displays (don't mirror), present your deck full-screen **on your laptop's own screen**, and let presik be full-screen **on the projector**, capturing your laptop screen. You look at your deck; the room sees presik (your slide + the quiz) on the projector. *(Single mirrored display works too — present your deck in a window and share that window — but extended displays are smoother.)*
+
 ### In class
 
 4. **Start presik** from your content root:
@@ -127,19 +131,19 @@ You keep presenting in your usual app; presik adds the interactive layer beside 
    cd ~/courses/web-dev
    presik lecture-05 --group "3-A"      # or omit --group and type the name when asked
    ```
-5. **Read the printed addresses.** You'll use `Teacher:` (your phone), `Projector:` (the room), and `Students:`. Note the random **Key** in the `?key=…`.
-6. **On the projector computer**, open **Chrome/Edge** to the **`Projector:` URL** (`http://…/present`). Click **"⧉ Float over slides"** (or drag the window onto a second display).
-7. **Start your PowerPoint/Keynote slideshow** (full-screen). The presik window floats on top / sits on the second screen, showing a big join QR.
-8. **On your phone**, open the **`Teacher:` URL** (`http://…/host?key=…`). This is your remote — keep it in your hand.
-9. **Students** scan the QR on the projector (or type the `Students:` URL). Watch the "connected" count climb on your phone.
-10. **Present normally with your clicker.** When you reach a question slide, tap **`▶ Show Q1`** on your phone. Students' phones light up; the projector shows the counter climbing.
-11. **When enough have answered** (you see it on your phone, along with your private `hint`), tap **`👁 Reveal`**. The projector now shows the distribution and the correct answer. Discuss.
-12. **Advance your deck** to the next question slide, tap **`▶ Show Q2`**, and repeat. (`◀ Back` undoes a step if you misclick.)
-13. **When class ends,** press **`Ctrl+C`** in the terminal. Answers are saved; analyse later with `presik report`.
+5. **Read the printed addresses.** You'll use `Teacher:` (your phone), `Students:`, and the projector page below. Note the random **Key** in the `?key=…`.
+6. **On the projector**, open **Chrome** to **`http://localhost:<port>/present`** — use `localhost` (not the LAN address); screen capture only works from a secure origin, and your own machine's `localhost` counts. Click **`⛶ Fullscreen`**.
+7. Click **`▶ Share your slides`** and pick your **laptop screen** (or your PowerPoint/Keynote *window*). Your slide now fills the projector, with a small join QR in the corner.
+8. **On your phone**, open the **`Teacher:` URL** (`http://…/host?key=…`) — your remote.
+9. **Students** scan the QR on the projector. Watch "connected" climb on your phone.
+10. **Present normally with your clicker.** When you reach a question, tap **`▶ Show Q1`** on your phone. A card with the join QR and a live counter appears over your slide; phones light up.
+11. **When enough have answered** (you see the count and your private `hint` on your phone), tap **`👁 Reveal`**. A result panel with the distribution and correct answer appears over your slide. Discuss.
+12. **Advance your deck** to the next question, tap **`▶ Show Q2`**, repeat. (`◀ Back` undoes a step; **Hide overlay** clears the projector overlay during pure-content slides.)
+13. **When class ends,** press **`Ctrl+C`**. Answers are saved; analyse later with `presik report`.
 
 > **Fewer taps:** turn on the **Auto-reveal** checkbox on `/host` and each question reveals itself once everyone connected has answered — so step 11 happens on its own and each question is a single tap.
 >
-> **One clicker for both:** `/host` also responds to **Space / → / PageDown** (advance) and **← / PageUp** (back), so a spare Bluetooth clicker pointed at the phone/laptop showing `/host` drives the quiz with the same press as your slides.
+> **No screen capture?** If you open `/present` on the LAN address instead of `localhost` (or in a browser without screen capture), it falls back to a **stand-alone full-screen quiz view** — put that on a second display and present your deck on the projector separately.
 
 ---
 

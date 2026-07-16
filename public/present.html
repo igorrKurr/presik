@@ -5,148 +5,225 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Quiz — presenter</title>
 <!-- presik -->
-<!-- The projector-side "live layer" for non-Marp decks: shows the join QR, the
-     live answer counter, and (after reveal) the distribution — the pieces your
-     own PowerPoint/Keynote slide can't. Either full-screen on the projector, or
-     popped out as an always-on-top Picture-in-Picture window that floats over a
-     native slideshow. View-only: it follows revealed state, controls nothing. -->
+<!-- The projector surface for non-Marp decks. It screen-captures your
+     PowerPoint/Keynote *window* and shows it full-screen, compositing the quiz
+     (join QR, answer counter, and the result after reveal) as crisp HTML that
+     appears only while a question is live. Screen capture needs a secure
+     context, so open this on the presenting machine at http://localhost:<port>.
+     Where capture isn't available, it falls back to a stand-alone full-screen
+     quiz view you can put on a second display. View-only: controls nothing. -->
 <link rel="stylesheet" href="/embed.css">
 <style>
   html, body { margin: 0; height: 100%; background: #0b1118; color: #f1f5f9;
-    font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
-  #stage { height: 100vh; }
-  #live { height: 100%; padding: 40px; box-sizing: border-box; }
-  #placeholder { height: 100%; display: none; flex-direction: column; align-items: center;
-    justify-content: center; gap: 14px; color: #94a3b8; text-align: center; padding: 40px; }
-  #pipBtn { position: fixed; top: 14px; right: 16px; z-index: 10; background: #1b2634;
-    color: #f1f5f9; border: 1px solid #223041; border-radius: 8px; padding: 9px 14px;
-    font-size: 14px; cursor: pointer; opacity: .55; }
-  #pipBtn:hover { opacity: 1; }
-  #pipBtn[hidden] { display: none; }
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; overflow: hidden; }
+  #stage { position: relative; height: 100vh; width: 100vw; }
+  #cap { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain;
+    background: #000; display: none; }
+  #overlay { position: absolute; inset: 0; display: none; pointer-events: none; }
+  #standalone { position: absolute; inset: 0; }
+  #standalone #live { height: 100%; padding: 40px; box-sizing: border-box; }
   .conn { height: 100%; display: flex; align-items: center; justify-content: center; color: #94a3b8; font-size: 22px; }
+
+  /* setup screen (capture available, not sharing yet) */
+  .setup { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; text-align: center; }
+  .setup .big { font-size: 24px; }
+  .setup .sub { color: #94a3b8; font-size: 18px; max-width: 620px; }
+
+  /* control bar */
+  #bar { position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 20;
+    display: flex; gap: 8px; align-items: center; background: rgba(16,22,31,.82);
+    border: 1px solid #223041; border-radius: 10px; padding: 7px 9px; }
+  #bar button { background: #1b2634; color: #f1f5f9; border: 1px solid #223041;
+    border-radius: 7px; padding: 8px 13px; font-size: 14px; cursor: pointer; }
+  #bar button.primary { background: #38bdf8; color: #0b1118; border-color: #38bdf8; font-weight: 600; }
+  #bar button[hidden] { display: none; }
+  #bar .note { color: #94a3b8; font-size: 13px; max-width: 320px; }
+  #bar.faint { opacity: .18; transition: opacity .4s; }
+  #bar.faint:hover { opacity: 1; }
+
+  /* composited overlay pieces (over the captured slide) */
+  .ov { position: absolute; pointer-events: none; background: rgba(11,17,24,.86);
+    border: 1px solid rgba(56,189,248,.35); border-radius: 14px; backdrop-filter: blur(3px); }
+  .ov-chip { left: 26px; bottom: 26px; display: flex; align-items: center; gap: 12px; padding: 12px 16px; }
+  .ov-chip img { width: 92px; height: 92px; background: #fff; border-radius: 8px; padding: 5px; display: block; }
+  .ov-chip .lbl { font-size: 15px; color: #38bdf8; letter-spacing: .06em; text-transform: uppercase; }
+  .ov-chip .url { font-size: 15px; color: #cbd5e1; }
+  .ov-card { right: 30px; bottom: 30px; display: flex; flex-direction: column; align-items: center;
+    gap: 10px; padding: 20px 24px; max-width: 360px; }
+  .ov-card img { width: 190px; height: 190px; background: #fff; border-radius: 10px; padding: 7px; display: block; }
+  .ov-card .cta { font-size: 22px; font-weight: 600; color: #4ade80; }
+  .ov-card .count { font-size: 18px; color: #cbd5e1; }
+  .ov-panel { left: 30px; right: 30px; bottom: 30px; padding: 20px 26px; }
+  .ov-panel .head { font-size: 16px; letter-spacing: .06em; text-transform: uppercase; color: #38bdf8; margin-bottom: 12px; }
+  .ov-panel .quiz-opts { max-width: none; }
+  .ov-panel .quiz-explain { margin-top: 12px; }
 </style>
 </head>
 <body>
-  <button id="pipBtn" hidden>⧉ Float over slides</button>
+  <div id="bar">
+    <button id="shareBtn" class="primary" hidden>▶ Share your slides</button>
+    <button id="stopBtn" hidden>■ Stop sharing</button>
+    <button id="fsBtn">⛶ Fullscreen</button>
+    <span class="note" id="barNote"></span>
+  </div>
   <div id="stage">
-    <div id="live"><div class="conn">Connecting…</div></div>
-    <div id="placeholder">
-      <div style="font-size:22px">Floating over your slides ↗</div>
-      <div>Close the little window to bring this back into the tab.</div>
-    </div>
+    <video id="cap" autoplay muted playsinline></video>
+    <div id="overlay"></div>
+    <div id="standalone"><div id="live"><div class="conn">Connecting…</div></div></div>
   </div>
 <script>
   var QR_SRC = location.origin + '/qr.svg';
   var LAST = null;
+  var sharing = false;
+  var stream = null;
+  var supported = !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia && window.isSecureContext);
+
+  var cap = document.getElementById('cap');
+  var overlay = document.getElementById('overlay');
+  var standalone = document.getElementById('standalone');
   var liveEl = document.getElementById('live');
-  var placeholder = document.getElementById('placeholder');
-  var pipBtn = document.getElementById('pipBtn');
+  var bar = document.getElementById('bar');
+  var shareBtn = document.getElementById('shareBtn');
+  var stopBtn = document.getElementById('stopBtn');
+  var barNote = document.getElementById('barNote');
 
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
     });
   }
+  function bar_(pct) { return '<div class="quiz-bar"><div class="quiz-bar-fill" style="width:' + pct + '%"></div></div>'; }
+  function joinUrl() { return (LAST && LAST.joinUrl) || ''; }
+
+  // ---------- composited overlay (shown over the captured slide) ----------
+  function joinChip() {
+    return '<div class="ov ov-chip"><img src="' + QR_SRC + '" alt="Join QR">' +
+      '<div><div class="lbl">Join</div><div class="url">' + esc(joinUrl()) + '</div></div></div>';
+  }
+  function questionCard(s) {
+    var st = s.stats || {};
+    return '<div class="ov ov-card"><img src="' + QR_SRC + '" alt="Join QR">' +
+      '<div class="cta">Answer on your phone</div>' +
+      '<div class="count">' + (st.answered || 0) + ' / ' + (st.connected || 0) + ' answered</div></div>';
+  }
+  // The bars/answers + explain — shared by the composited panel and the
+  // stand-alone reveal slide, without either wrapper.
+  function revealBody(s) {
+    var q = s.question, st = s.stats || {};
+    var body = '';
+    if (q.type === 'choice') {
+      var counts = st.counts || {}, total = Object.keys(counts).reduce(function (a, k) { return a + counts[k]; }, 0) || 1;
+      var correct = q.correct || [];
+      body = '<div class="quiz-opts">' + (q.options || []).map(function (o) {
+        var c = counts[o.id] || 0, pct = Math.round((c / total) * 100), ok = correct.indexOf(o.id) >= 0;
+        return '<div class="quiz-opt' + (ok ? ' quiz-correct' : '') + '"><div class="quiz-opt-row"><span>' +
+          esc(o.text) + '</span><span>' + c + ' · ' + pct + '%</span></div>' + bar_(pct) + '</div>';
+      }).join('') + '</div>';
+    } else if (q.type === 'scale') {
+      var c2 = st.counts || {}, keys = Object.keys(c2);
+      var maxc = Math.max.apply(null, [1].concat(keys.map(function (k) { return c2[k]; })));
+      body = '<div class="quiz-opts">' + keys.map(function (k) {
+        var c = c2[k], pct = Math.round((c / maxc) * 100);
+        return '<div class="quiz-opt"><div class="quiz-opt-row"><span>' + esc(k) + '</span><span>' + c + '</span></div>' + bar_(pct) + '</div>';
+      }).join('') + '</div>' + (st.avg ? '<div class="quiz-note">Average: ' + esc(st.avg) + '</div>' : '');
+    } else {
+      var texts = st.texts || [];
+      body = '<div class="quiz-texts">' + (texts.length
+        ? texts.slice(0, 10).map(function (t) { return '<div class="quiz-text-item">' + esc(t) + '</div>'; }).join('')
+        : '<div class="quiz-muted">No answers yet</div>') + '</div>';
+    }
+    return body + (q.explain ? '<div class="quiz-explain">' + esc(q.explain) + '</div>' : '');
+  }
+  function revealPanel(s) {
+    return '<div class="ov ov-panel"><div class="head">Result</div>' + revealBody(s) + '</div>';
+  }
+  function buildOverlay(s) {
+    var q = s && s.question;
+    var live = q && s.index >= 0 && !s.overlayHidden;
+    if (!live) return joinChip();               // between questions: just a small join chip
+    if (!s.revealed) return joinChip() + questionCard(s);
+    return revealPanel(s);                        // reveal panel is full-width; it stands alone
+  }
+
+  // ---------- stand-alone full-screen view (fallback / second screen) ----------
   function joinBlock(size) {
-    var url = (LAST && LAST.joinUrl) || '';
     return '<div class="quiz-join quiz-join-' + size + '"><img src="' + QR_SRC + '" alt="Join QR code">' +
       (size === 'lg' ? '<div class="quiz-join-title">Scan to join</div>' : '') +
-      (url ? '<div class="quiz-join-url">' + esc(url) + '</div>' : '') + '</div>';
+      (joinUrl() ? '<div class="quiz-join-url">' + esc(joinUrl()) + '</div>' : '') + '</div>';
   }
-  function bar(pct) { return '<div class="quiz-bar"><div class="quiz-bar-fill" style="width:' + pct + '%"></div></div>'; }
-
-  function buildHtml(s) {
+  function buildStandalone(s) {
     if (!s || !s.question) {
       return '<div class="quiz-slide quiz-join-slide">' + joinBlock('lg') +
         '<div class="quiz-join-note">Scan to join · keep this page open until the end</div></div>';
     }
     var q = s.question, st = s.stats || {};
     if (!s.revealed) {
-      var h = '<div class="quiz-slide quiz-question-slide">';
-      h += '<div class="quiz-kicker">Question ' + (s.index + 1) + ' / ' + s.total + '</div>';
+      var h = '<div class="quiz-slide quiz-question-slide"><div class="quiz-kicker">Question ' + (s.index + 1) + ' / ' + s.total + '</div>';
       h += '<div class="quiz-question-text">' + esc(q.text) + '</div>';
       if (q.note) h += '<div class="quiz-note">' + esc(q.note) + '</div>';
       if (q.type === 'choice' && q.options && q.options.length)
         h += '<ul class="quiz-options-list">' + q.options.map(function (o) { return '<li>' + esc(o.text) + '</li>'; }).join('') + '</ul>';
       h += '<div class="quiz-cta"><div class="quiz-cta-title">Answer on your phone</div>' +
         '<div class="quiz-progress">Answered: ' + (st.answered || 0) + ' · connected: ' + (st.connected || 0) + '</div></div>';
-      h += joinBlock('sm') + '</div>';
-      return h;
+      return h + joinBlock('sm') + '</div>';
     }
-    var r = '<div class="quiz-slide quiz-reveal-slide"><div class="quiz-kicker">Result</div>';
-    r += '<div class="quiz-question-text">' + esc(q.text) + '</div>';
-    if (q.type === 'choice') {
-      var counts = st.counts || {}, total = Object.keys(counts).reduce(function (a, k) { return a + counts[k]; }, 0) || 1;
-      var correct = q.correct || [];
-      r += '<div class="quiz-opts">' + (q.options || []).map(function (o) {
-        var c = counts[o.id] || 0, pct = Math.round((c / total) * 100), ok = correct.indexOf(o.id) >= 0;
-        return '<div class="quiz-opt' + (ok ? ' quiz-correct' : '') + '"><div class="quiz-opt-row"><span>' +
-          esc(o.text) + '</span><span>' + c + ' · ' + pct + '%</span></div>' + bar(pct) + '</div>';
-      }).join('') + '</div>';
-    } else if (q.type === 'scale') {
-      var counts2 = st.counts || {}, keys = Object.keys(counts2);
-      var maxc = Math.max.apply(null, [1].concat(keys.map(function (k) { return counts2[k]; })));
-      r += '<div class="quiz-opts">' + keys.map(function (k) {
-        var c = counts2[k], pct = Math.round((c / maxc) * 100);
-        return '<div class="quiz-opt"><div class="quiz-opt-row"><span>' + esc(k) + '</span><span>' + c + '</span></div>' + bar(pct) + '</div>';
-      }).join('') + '</div>' + (st.avg ? '<div class="quiz-note">Average: ' + esc(st.avg) + '</div>' : '');
-    } else if (q.type === 'text') {
-      var texts = st.texts || [];
-      r += '<div class="quiz-texts">' + (texts.length
-        ? texts.slice(0, 14).map(function (t) { return '<div class="quiz-text-item">' + esc(t) + '</div>'; }).join('')
-        : '<div class="quiz-muted">No answers yet</div>') + '</div>';
-    }
-    if (st.connected > st.answered)
-      r += '<div class="quiz-progress">Still answering: ' + (st.connected - st.answered) + ' of ' + st.connected + ' connected</div>';
-    if (q.explain) r += '<div class="quiz-explain">' + esc(q.explain) + '</div>';
-    r += joinBlock('sm') + '</div>';
-    return r;
+    return '<div class="quiz-slide quiz-reveal-slide"><div class="quiz-kicker">Result</div>' +
+      '<div class="quiz-question-text">' + esc(q.text) + '</div>' + revealBody(s) + joinBlock('sm') + '</div>';
   }
 
-  function render(s) { liveEl.innerHTML = buildHtml(s); }
+  function setupScreen(s) {
+    var liveNote = (s && s.question && s.index >= 0) ? '<div class="sub" style="color:#4ade80">A question is live — share to project it over your slide.</div>' : '';
+    return '<div class="setup"><div class="quiz-join quiz-join-lg"><img src="' + QR_SRC + '" alt="Join QR code">' +
+      '<div class="quiz-join-title">Scan to join</div><div class="quiz-join-url">' + esc(joinUrl()) + '</div></div>' +
+      '<div class="big">Click <b>▶ Share your slides</b> above,</div>' +
+      '<div class="sub">then pick your PowerPoint/Keynote <b>window</b>. Your slide fills the screen and the quiz appears over it while a question is live.</div>' + liveNote + '</div>';
+  }
 
-  // embed=1 → this projector view isn't a student, so it doesn't inflate the
-  // "connected" count; no ?key= → it only ever sees what students see (no
-  // distribution/correct answer until the teacher reveals).
+  function render() {
+    if (sharing) { overlay.innerHTML = buildOverlay(LAST || {}); return; }
+    if (supported) { liveEl.innerHTML = setupScreen(LAST); return; }
+    liveEl.innerHTML = LAST ? buildStandalone(LAST) : '<div class="conn">Connecting…</div>';
+  }
+
+  function updateMode() {
+    cap.style.display = sharing ? 'block' : 'none';
+    overlay.style.display = sharing ? 'block' : 'none';
+    standalone.style.display = sharing ? 'none' : 'block';
+    shareBtn.hidden = !supported || sharing;
+    stopBtn.hidden = !sharing;
+    bar.classList.toggle('faint', sharing); // get out of the way once you're projecting
+    barNote.textContent = supported
+      ? (sharing ? '' : 'Share your Keynote/PowerPoint window to project it with the quiz.')
+      : 'Open this at http://localhost:' + location.port + '/present (Chrome) to overlay your slides — otherwise this is a second-screen view.';
+  }
+
+  // ---------- screen capture ----------
+  async function startShare() {
+    try {
+      stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 30 }, audio: false });
+    } catch (_) { return; } // user cancelled the picker
+    cap.srcObject = stream;
+    sharing = true;
+    stream.getVideoTracks()[0].addEventListener('ended', stopShare); // "Stop sharing" from the browser chrome
+    updateMode(); render();
+  }
+  function stopShare() {
+    if (stream) stream.getTracks().forEach(function (t) { t.stop(); });
+    stream = null; cap.srcObject = null; sharing = false;
+    updateMode(); render();
+  }
+  shareBtn.onclick = startShare;
+  stopBtn.onclick = stopShare;
+  document.getElementById('fsBtn').onclick = function () {
+    if (document.fullscreenElement) document.exitFullscreen();
+    else document.documentElement.requestFullscreen && document.documentElement.requestFullscreen();
+  };
+
   var es = new EventSource('/api/stream?embed=1');
-  es.onmessage = function (e) { try { LAST = JSON.parse(e.data); render(LAST); } catch (_) {} };
-  es.onerror = function () { if (!LAST) liveEl.innerHTML = '<div class="conn">Reconnecting…</div>'; };
+  es.onmessage = function (e) { try { LAST = JSON.parse(e.data); render(); } catch (_) {} };
+  es.onerror = function () { if (!LAST && !sharing) liveEl.innerHTML = '<div class="conn">Reconnecting…</div>'; };
 
-  // ---- Document Picture-in-Picture: an always-on-top window that floats over
-  // a native fullscreen Keynote/PowerPoint slideshow on the same machine. ----
-  var PIP_CSS =
-    'html,body{margin:0;height:100%;background:#0b1118;color:#f1f5f9;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;}' +
-    '#live{height:100%;padding:14px;box-sizing:border-box;}' +
-    '.quiz-slide{gap:8px;}.quiz-kicker{font-size:12px;}.quiz-question-text{font-size:17px;max-width:none;}' +
-    '.quiz-note{font-size:12px;}.quiz-options-list{font-size:13px;gap:3px;}.quiz-cta-title{font-size:14px;}' +
-    '.quiz-progress{font-size:12px;}.quiz-muted{font-size:13px;}.quiz-opt{font-size:13px;}.quiz-explain{font-size:12px;}' +
-    '.quiz-join-lg img{width:150px;height:150px;}.quiz-join-title{font-size:15px;}.quiz-join-url{font-size:11px;}' +
-    '.quiz-join-note{font-size:12px;}.quiz-texts{max-height:60vh;}.quiz-text-item{font-size:12px;}';
-
-  var pipWin = null;
-  if ('documentPictureInPicture' in window) {
-    pipBtn.hidden = false;
-    pipBtn.onclick = async function () {
-      if (pipWin) { pipWin.close(); return; }
-      try {
-        pipWin = await window.documentPictureInPicture.requestWindow({ width: 360, height: 430 });
-        var link = pipWin.document.createElement('link');
-        link.rel = 'stylesheet'; link.href = location.origin + '/embed.css';
-        pipWin.document.head.appendChild(link);
-        var style = pipWin.document.createElement('style');
-        style.textContent = PIP_CSS; pipWin.document.head.appendChild(style);
-        pipWin.document.body.appendChild(liveEl); // adopt the live element; render() keeps updating it
-        placeholder.style.display = 'flex';
-        pipBtn.textContent = '⧉ Return to tab';
-        pipWin.addEventListener('pagehide', function () {
-          document.getElementById('stage').insertBefore(liveEl, placeholder);
-          placeholder.style.display = 'none';
-          pipBtn.textContent = '⧉ Float over slides';
-          pipWin = null;
-        });
-      } catch (_) { pipWin = null; }
-    };
-  }
+  updateMode();
 </script>
 </body>
 </html>

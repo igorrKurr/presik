@@ -252,7 +252,9 @@ function ensureSlideHtml() {
 // ---------------------------------------------------------------- state
 // autoReveal is an opt-in, per-run teacher preference (toggled from /host):
 // when on, a question reveals itself once every connected student has answered.
-const state = { index: -1, revealed: false, autoReveal: false };
+// overlayHidden lets the teacher clear the projector overlay (the /present
+// compositor) during pure-content stretches; any navigation shows it again.
+const state = { index: -1, revealed: false, autoReveal: false, overlayHidden: false };
 const answers = new Map(); // qid -> Map(clientId -> value)
 const students = new Set();
 const streams = new Set();
@@ -441,6 +443,7 @@ const snapshot = (isHost) =>
     total: quiz.questions.length,
     revealed: state.revealed,
     autoReveal: state.autoReveal,
+    overlayHidden: state.overlayHidden,
     question: questionFor(isHost),
     stats: stats(isHost),
     joinUrl,
@@ -635,6 +638,7 @@ const server = http.createServer(async (req, res) => {
       state.revealed = true;
     }
     else if (action === 'auto') state.autoReveal = !!body.autoReveal; // /host toggle
+    else if (action === 'overlay') state.overlayHidden = !body.show; // show/hide the projector overlay
     else if (action === 'clear') {
       const q = cur();
       if (q) {
@@ -649,6 +653,8 @@ const server = http.createServer(async (req, res) => {
       answers.clear();
       if (runId) db.prepare('DELETE FROM answers WHERE run_id = ?').run(runId);
     }
+    // Any question navigation brings the projector overlay back into view.
+    if (['next', 'prev', 'goto', 'reveal'].includes(action)) state.overlayHidden = false;
     persistLiveState();
     broadcast();
     return send(res, 200, 'application/json', '{"ok":true}');

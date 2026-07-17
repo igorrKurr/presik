@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert');
-const { validateAnswer, groupSlug, rankHostIps, bestHostIp, toSessionName, buildDeckSteps } = require('../lib');
+const { validateAnswer, groupSlug, rankHostIps, bestHostIp, toSessionName, buildDeckSteps, splitMarpSlides, deriveMarpMarkdown } = require('../lib');
 
 test('validateAnswer: choice accepts only real option ids', () => {
   const q = { type: 'choice', options: [{ id: 'a' }, { id: 'b' }] };
@@ -76,4 +76,28 @@ test('buildDeckSteps: interleaves question+reveal after each placed page', () =>
 test('buildDeckSteps: multiple questions on one page keep questions.json order', () => {
   const steps = buildDeckSteps(1, [{ id: 'a', slide: 1 }, { id: 'b', slide: 1 }]);
   assert.deepStrictEqual(steps.map((s) => s.t + (s.qi ?? '')), ['page', 'question0', 'reveal0', 'question1', 'reveal1']);
+});
+
+test('splitMarpSlides: front-matter + separators, ignoring code fences', () => {
+  const md = '---\nmarp: true\n---\n\n# One\n\n---\n\n# Two\n```\n---\n```\n\n---\n\n# Three';
+  const { front, slides } = splitMarpSlides(md);
+  assert.match(front, /marp: true/);
+  assert.strictEqual(slides.length, 3);
+  assert.match(slides[0], /# One/);
+  assert.match(slides[1], /# Two/);
+  assert.match(slides[1], /---/); // the --- inside the fence stayed inside slide 2
+  assert.match(slides[2], /# Three/);
+});
+
+test('deriveMarpMarkdown: inserts question+reveal after the placed slide', () => {
+  const md = '---\nmarp: true\n---\n\n# One\n\n---\n\n# Two';
+  const out = deriveMarpMarkdown(md, [{ id: 'q1', slide: 1 }]);
+  const iOne = out.indexOf('# One'), iQ = out.indexOf('data-quiz-question="q1"'), iR = out.indexOf('data-quiz-reveal="q1"'), iTwo = out.indexOf('# Two');
+  assert.ok(iOne < iQ && iQ < iR && iR < iTwo, 'markers land between slide One and Two, question before reveal');
+  assert.strictEqual(splitMarpSlides(out).slides.length, 4); // One, question, reveal, Two
+});
+
+test('deriveMarpMarkdown: no placed questions → unchanged', () => {
+  const md = '---\nmarp: true\n---\n\n# One';
+  assert.strictEqual(deriveMarpMarkdown(md, [{ id: 'q1' }]), md);
 });

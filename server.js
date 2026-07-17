@@ -33,7 +33,7 @@ const readline = require('readline');
 const { spawn, execFileSync } = require('child_process');
 const QRCode = require('qrcode');
 const { openDb } = require('./db');
-const { groupSlug, bestHostIp, rankHostIps, validateAnswer } = require('./lib');
+const { groupSlug, bestHostIp, rankHostIps, validateAnswer, splitMarpSlides, deriveMarpMarkdown } = require('./lib');
 const { readAssetText } = require('./assets');
 
 const ENGINE_DIR = __dirname;
@@ -151,6 +151,7 @@ const course = path.dirname(sessionPath) === '.' ? null : path.dirname(sessionPa
 const QUESTIONS_FILE = path.join(SESSION_DIR, 'questions.json');
 const DECK_FILE = path.join(SESSION_DIR, 'deck.marp.md');
 const DECK_HTML = path.join(SESSION_DIR, 'deck.marp.html');
+const DECK_BUILD = path.join(SESSION_DIR, '.deck.build.md'); // derived deck with auto-inserted quiz markers (kept beside the deck so relative assets resolve)
 const DECK_PDF = path.join(SESSION_DIR, 'deck.pdf');
 const QR_FILE = path.resolve(opt('qr', path.join(SESSION_DIR, 'join-qr.svg')));
 
@@ -215,6 +216,15 @@ const MARP_AVAILABLE = fs.existsSync(MARP_JS);
 // navigation on /slides, so slides and quiz stay in lockstep.
 const deckType = fs.existsSync(DECK_FILE) ? 'marp' : (fs.existsSync(DECK_PDF) ? 'pdf' : null);
 const deckExists = !!deckType;
+if (deckType === 'marp') {
+  try {
+    const count = splitMarpSlides(fs.readFileSync(DECK_FILE, 'utf8')).slides.length;
+    quiz.questions.forEach((q) => {
+      if (q.slide && q.slide > count)
+        console.error('  Note: question ' + q.id + ' is placed on slide ' + q.slide + ', but the deck has ' + count + ' slides — it will appear at the end.');
+    });
+  } catch (_) {}
+}
 
 // Injects a link to embed.js/css plus a marker where the server will splice
 // in the live config on EVERY /slides request (not here, because here we
@@ -252,9 +262,19 @@ function quizConfig(isHost) {
 }
 
 function ensureSlideHtml() {
-  const stale = !fs.existsSync(DECK_HTML) || fs.statSync(DECK_FILE).mtimeMs > fs.statSync(DECK_HTML).mtimeMs;
+  // Placement comes from questions.json ("slide": N), so a change there — not
+  // just the deck — means a rebuild. When any question is placed, build a
+  // derived deck with the quiz markers auto-inserted; otherwise build as-is.
+  const needsDerive = quiz.questions.some((q) => q.slide);
+  const srcMtime = Math.max(fs.statSync(DECK_FILE).mtimeMs, fs.statSync(QUESTIONS_FILE).mtimeMs);
+  const stale = !fs.existsSync(DECK_HTML) || srcMtime > fs.statSync(DECK_HTML).mtimeMs;
   if (stale) {
-    execFileSync(process.execPath, [MARP_JS, DECK_FILE, '-o', DECK_HTML, '--html', '--allow-local-files'], { stdio: 'inherit' });
+    let buildSrc = DECK_FILE;
+    if (needsDerive) {
+      fs.writeFileSync(DECK_BUILD, deriveMarpMarkdown(fs.readFileSync(DECK_FILE, 'utf8'), quiz.questions));
+      buildSrc = DECK_BUILD;
+    }
+    execFileSync(process.execPath, [MARP_JS, buildSrc, '-o', DECK_HTML, '--html', '--allow-local-files'], { stdio: 'inherit' });
     injectQuizEmbed(DECK_HTML);
     console.log('  Slides built: ' + path.relative(CONTENT_DIR, DECK_HTML));
   }

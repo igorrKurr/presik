@@ -10,8 +10,10 @@
     "  scale  — a min..max scale (e.g. confidence 1-5)",
     "explain — shown to students after reveal (both on slides and on /host)",
     "hint    — visible ONLY TO YOU, on /host: what to do with the result",
-    "id      — used for markers in deck.marp.md (data-quiz-question=\"...\");",
-    "          if omitted, generated automatically as <session>-q<N>"
+    "slide   — the 1-based slide/page this question appears after, in your deck",
+    "          (deck.marp.md or deck.pdf). Omit it to keep a question off the",
+    "          slides (still runnable from /host). No deck? slide is ignored.",
+    "id      — optional; generated as <session>-q<N> if omitted"
   ],
 
   "questions": [
@@ -20,6 +22,7 @@
       "type": "text",
       "text": "Opening question: what do you think ...?",
       "note": "There's no correct answer yet. Write what you think.",
+      "slide": 1,
       "hint": "Don't comment on answers now. Come back to these at the end.",
       "explain": "We'll come back to this at the end of class."
     },
@@ -27,6 +30,7 @@
       "type": "choice",
       "text": "A question with options",
       "note": "Clarification under the question (optional)",
+      "slide": 3,
       "options": [
         { "id": "a", "text": "The most commonly picked wrong option" },
         { "id": "b", "text": "The correct option", "correct": true },
@@ -40,12 +44,13 @@
       "text": "How confident do you feel about this topic right now?",
       "min": 1,
       "max": 5,
+      "slide": 4,
       "hint": "Average below 3 — don't move on, go back to the basics."
     },
     {
       "type": "text",
       "text": "What's still unclear?",
-      "note": "Anonymous.",
+      "note": "Anonymous. (No \"slide\", so it only runs from /host — e.g. an exit ticket.)",
       "hint": "Read before the next class. Common themes — opener for next time."
     }
   ]

@@ -2,6 +2,7 @@ node_modules/
 .presik/
 dist/
 **/deck.marp.html
+**/.deck.build.md
 **/join-qr.svg
 .DS_Store
 

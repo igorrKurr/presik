@@ -28,7 +28,7 @@ They render some of the same things, but they have **opposite audiences and oppo
 
 **presik owns the deck**, so the room's screen is always `/slides`, whatever your source format:
 
-- **Marp deck (`deck.marp.md`)** → rendered to HTML slides, quiz on marker slides.
+- **Marp deck (`deck.marp.md`)** → rendered to native HTML slides; presik inserts the quiz at the `slide` numbers.
 - **PDF deck (`deck.pdf`)** → rendered by pdf.js, quiz interleaved at the pages you choose (a question's `"slide": N`). Export from Keynote/PowerPoint/Google Slides — or later, drop the `.pptx`/`.key` and presik converts it under the hood.
 
 Because it's one fullscreen web page, the same `/slides` is what you put on the projector **or** screen-share in Zoom. So a class uses **three screens at once**: the room's `/slides`, your private `/host`, and every student's `/`.
@@ -147,19 +147,9 @@ Here the quiz lives *inside* your Markdown slides, and **paging through them is 
    cd ~/courses/web-dev
    presik new s01 --title "S1 — The request's journey"
    ```
-   This makes `s01/questions.json` **and** `s01/deck.marp.md` with the markers already wired to the example questions.
-2. **Edit `s01/questions.json`** with your questions.
-3. **Edit `s01/deck.marp.md`** — write your slides normally, and for each question place two marker slides where you want the question and its result to appear (each on its own slide, between `---`):
-   ```markdown
-   ---
-   <div data-quiz-join></div>                       <!-- big "Scan to join" QR, once, near the start -->
-   ---
-   <div data-quiz-question="q-404"></div>            <!-- the question slide -->
-   ---
-   <div data-quiz-reveal="q-404"></div>              <!-- its result slide -->
-   ---
-   ```
-   The `id` in each marker must match a question `id` in `questions.json`.
+   This makes `s01/questions.json` **and** `s01/deck.marp.md` (already wired to the example questions).
+2. **Edit `s01/deck.marp.md`** — write your slides normally, in Markdown. **You don't place any quiz markers** — just slides.
+3. **Edit `s01/questions.json`** — write your questions, and give each a **`"slide": N`** (the 1-based slide it should follow). presik inserts the question and its result right after slide N when it builds the deck. Same mechanism as a PDF deck — placement always lives in `questions.json`.
 
 ### In class
 
@@ -243,7 +233,7 @@ presik new web-dev/s02 --title "S02 — Status codes"
 presik new s02 --questions-only                # just the quiz, no Marp deck (for PowerPoint/Keynote)
 ```
 
-It generates both files from templates — the deck's markers already match the example questions, ready to run as-is or edit. It won't overwrite an existing `questions.json`/`deck.marp.md`, so it's always safe to run.
+It generates both files from templates — the example questions already carry `slide` numbers that match the template deck, ready to run as-is or edit. It won't overwrite an existing `questions.json`/`deck.marp.md`, so it's always safe to run.
 
 The full `questions.json` schema (question types `choice` / `text` / `scale`), naming rules, and every flag — [`CONVENTIONS.md`](CONVENTIONS.md).
 

@@ -74,6 +74,61 @@ function validateAnswer(q, rawValue) {
   return null;
 }
 
+// Split a Marp markdown deck into its front-matter and slides. Slides are
+// separated by a `---` line at the top level (not inside a ``` / ~~~ code
+// fence); the leading `---`…`---` block is front-matter, not a separator.
+function splitMarpSlides(md) {
+  const lines = String(md).split(/\r?\n/);
+  let front = '';
+  let i = 0;
+  if (lines[0] !== undefined && lines[0].trim() === '---') {
+    let j = 1;
+    while (j < lines.length && lines[j].trim() !== '---') j++;
+    front = lines.slice(0, j + 1).join('\n'); // includes the closing ---
+    i = j + 1;
+  }
+  const slides = [];
+  let cur = [];
+  let fence = null; // '`' or '~' while inside a fenced code block
+  for (; i < lines.length; i++) {
+    const t = lines[i].trim();
+    const m = t.match(/^(`{3,}|~{3,})/);
+    if (m) {
+      const ch = m[1][0];
+      if (fence === null) fence = ch;
+      else if (ch === fence) fence = null;
+      cur.push(lines[i]);
+      continue;
+    }
+    if (fence === null && /^---\s*$/.test(t)) { slides.push(cur.join('\n')); cur = []; continue; }
+    cur.push(lines[i]);
+  }
+  slides.push(cur.join('\n'));
+  return { front, slides };
+}
+
+// Rewrite a Marp deck so each question with a `slide` gets an auto-generated
+// question + reveal marker slide inserted right after that 1-based slide. The
+// author writes no markers — placement lives in questions.json, unified with
+// PDF decks. Questions without `slide` are left out (controlled from /host).
+function deriveMarpMarkdown(md, questions) {
+  const placed = (questions || []).filter((q) => q && q.slide);
+  if (!placed.length) return String(md); // nothing to inject → build as-is
+  const { front, slides } = splitMarpSlides(md);
+  const bySlide = {};
+  placed.forEach((q) => { (bySlide[q.slide] = bySlide[q.slide] || []).push(q); });
+  const marker = (q) => ['<div data-quiz-question="' + q.id + '"></div>', '<div data-quiz-reveal="' + q.id + '"></div>'];
+  const chunks = [];
+  for (let n = 1; n <= slides.length; n++) {
+    chunks.push(slides[n - 1]);
+    (bySlide[n] || []).forEach((q) => chunks.push(...marker(q)));
+  }
+  // Questions placed past the last slide append at the end.
+  Object.keys(bySlide).map(Number).filter((n) => n > slides.length).sort((a, b) => a - b)
+    .forEach((n) => bySlide[n].forEach((q) => chunks.push(...marker(q))));
+  return (front ? front + '\n\n' : '') + chunks.join('\n\n---\n\n') + '\n';
+}
+
 // Build the combined navigation sequence for a PDF deck: each page, followed by
 // the question+reveal steps of any questions placed on that page (1-based
 // `slide`). Questions without a `slide` don't appear in the deck (controlled
@@ -94,4 +149,4 @@ function buildDeckSteps(numPages, questions) {
   return steps;
 }
 
-module.exports = { toSessionName, groupSlug, rankHostIps, bestHostIp, isPrivateV4, validateAnswer, buildDeckSteps, VIRTUAL_IFACE };
+module.exports = { toSessionName, groupSlug, rankHostIps, bestHostIp, isPrivateV4, validateAnswer, buildDeckSteps, splitMarpSlides, deriveMarpMarkdown, VIRTUAL_IFACE };

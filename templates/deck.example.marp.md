@@ -6,8 +6,18 @@ title: S00 — Class name
 ---
 
 <!--
-This is a starter template. Copy it as deck.marp.md into a session folder
-(next to questions.json) and edit. Full marker contract — CONVENTIONS.md.
+Starter Marp deck. Copy as deck.marp.md next to questions.json and edit.
+
+You DON'T hand-place quiz markers here any more. In questions.json, give a
+question a "slide": N and presik inserts it (and its result) right after slide N
+when it builds — the same way PDF decks work. Full contract: CONVENTIONS.md.
+
+Slides in this template, counted from 1:
+  1  Title
+  2  Join QR   (the <div data-quiz-join> below — optional)
+  3  First topic
+  4  More on this topic
+So a question with "slide": 3 appears right after "First topic".
 -->
 
 # S00 — Class name
@@ -26,14 +36,6 @@ A regular content slide — normal Marp markup.
 
 ---
 
-<div data-quiz-question="cold-open"></div>
-
----
-
-<div data-quiz-reveal="cold-open"></div>
-
----
-
 # More on this topic…
 
-The `id` in the markers above must match the `id` of a question in this session's `questions.json`.
+Keep writing normal slides. Questions drop in wherever their `slide` says.

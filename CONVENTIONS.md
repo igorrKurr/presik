@@ -92,9 +92,16 @@ A session's deck is **either** `deck.marp.md` **or** `deck.pdf` (Marp wins if bo
 
 The file is validated at server startup — a JSON error or a malformed question stops the launch immediately, not in the middle of class. `presik new <session>` scaffolds a starting `questions.json` (and `deck.marp.md`, unless `--questions-only`) from `templates/` for you — see below.
 
-## `deck.marp.md` — live quiz markers
+## Placing questions in a deck — `"slide": N`
 
-Three `<div>` markers (plain raw HTML — the deck is always built with `--html`), each on its own Marp slide (between `---`):
+Placement is **the same for both deck kinds** and lives in `questions.json`, not in the deck: give a question a **`"slide": N`** (1-based) and presik shows it — and its result — right after that slide/page. Arrow keys walk `slide, slide, [question], [result], slide, …` in one synced sequence.
+
+- **PDF deck** — presik renders the pages (pdf.js) and interleaves the quiz at the pages you chose.
+- **Marp deck** — presik auto-generates the quiz marker slides from the `slide` numbers and builds them into your deck (native Marp/bespoke rendering; you write **no** markers). Slide numbers count every slide, including a `data-quiz-join` slide if you add one. If `N` exceeds the deck's slide count, the question is appended at the end (with a note at startup).
+
+Questions **without** a `slide` don't appear in the deck at all — they're still runnable from `/host` (handy for an exit ticket).
+
+### Optional: the join-QR slide (Marp only)
 
 ```markdown
 ---
@@ -102,21 +109,9 @@ Three `<div>` markers (plain raw HTML — the deck is always built with `--html`
 <div data-quiz-join></div>
 
 ---
-
-<div data-quiz-question="<id of a question from questions.json>"></div>
-
----
-
-<div data-quiz-reveal="<the same id>"></div>
-
----
 ```
 
-- `data-quiz-join` — a large "Scan to join" QR code. Optional, usually once near the start of the deck, before the first question.
-- `data-quiz-question="<id>"` — a full-screen slide with the question; on the projector, the `→` arrow that lands on it makes that question current.
-- `data-quiz-reveal="<id>"` — the result slide; the arrow that lands on it shows the result.
-
-`<id>` must match the `id` of a question in this session's `questions.json` (explicit or auto-generated — if you don't set `id` by hand, check what it ended up being during startup validation). Questions without a matching slide pair (question+reveal) simply don't appear on the projector — control them via `/host` only, if needed.
+`data-quiz-join` is the one marker you may still hand-place: a large "Scan to join" QR, usually once near the start. (Question/result slides are generated for you from `slide`; PDF decks show a join QR in the corner automatically.)
 
 For more on how the live quiz behaves on slides, arrow-key control, and "who sees what" — see `README.md`.
 

@@ -1,13 +1,16 @@
 name: release
 
-# Build the single-file `presik` binary for each OS and upload it. Runs on a
-# version tag (v*), or manually. GitHub's setup-node provides official Node
-# builds (which carry the SEA fuse), so build.js uses them directly — no
-# runtime download needed on CI.
+# Build the single-file `presik` binary for each OS, smoke-test it, and publish
+# it to a GitHub Release. Runs on a version tag (v*) — or manually to just build
+# and upload Actions artifacts. GitHub's setup-node provides official Node
+# builds (which carry the SEA fuse), so build.js uses them directly.
 on:
   push:
     tags: ['v*']
   workflow_dispatch:
+
+permissions:
+  contents: write # create/upload the GitHub Release
 
 jobs:
   build:
@@ -29,9 +32,21 @@ jobs:
           node-version: 24.x
       - run: npm ci
       - run: npm run build
-      - run: npm run smoke # never upload a binary that doesn't serve
+      - run: npm run smoke # never ship a binary that doesn't serve
+      - name: Name the binary per platform
+        shell: bash
+        run: |
+          if [ "${{ runner.os }}" = "Windows" ]; then cp dist/presik.exe "${{ matrix.asset }}.exe"; else cp dist/presik "${{ matrix.asset }}"; fi
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.asset }}
-          path: dist/presik*
+          path: ${{ matrix.asset }}*
           if-no-files-found: error
+      - name: Publish to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" --title "${{ github.ref_name }}" --generate-notes 2>/dev/null || true
+          gh release upload "${{ github.ref_name }}" ${{ matrix.asset }}* --clobber

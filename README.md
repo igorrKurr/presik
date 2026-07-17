@@ -29,7 +29,7 @@ They render some of the same things, but they have **opposite audiences and oppo
 **presik owns the deck**, so the room's screen is always `/slides`, whatever your source format:
 
 - **Marp deck (`deck.marp.md`)** → rendered to native HTML slides; presik inserts the quiz at the `slide` numbers.
-- **PDF deck (`deck.pdf`)** → rendered by pdf.js, quiz interleaved at the pages you choose (a question's `"slide": N`). Export from Keynote/PowerPoint/Google Slides — or later, drop the `.pptx`/`.key` and presik converts it under the hood.
+- **PDF / PowerPoint / Keynote (`deck.pdf`, `deck.pptx`, `deck.key`)** → rendered by pdf.js, quiz interleaved at the pages you choose (a question's `"slide": N`). A `.pptx`/`.key` is converted to PDF under the hood (using the app's own renderer when installed, else LibreOffice).
 
 Because it's one fullscreen web page, the same `/slides` is what you put on the projector **or** screen-share in Zoom. So a class uses **three screens at once**: the room's `/slides`, your private `/host`, and every student's `/`.
 
@@ -104,9 +104,9 @@ All flags (`--dir`, `--port`, `--key`, `--host`, `--group`, `--tunnel`, `--qr`, 
 
 ---
 
-## Scenario A — a PowerPoint / Keynote deck (via PDF), step by step
+## Scenario A — a PowerPoint / Keynote deck, step by step
 
-You keep your slides in your usual app; presik renders them and interleaves the quiz, so **you present from presik** and everything stays in sync — same as Marp. For now you export a PDF once *(auto-conversion of `.pptx`/`.key` is on the roadmap)*.
+You keep your slides in your usual app; presik renders them and interleaves the quiz, so **you present from presik** and everything stays in sync — same as Marp.
 
 ### Set up once (before the class, at your desk)
 
@@ -115,8 +115,8 @@ You keep your slides in your usual app; presik renders them and interleaves the 
    cd ~/courses/web-dev            # your content root
    presik new lecture-05 --questions-only --title "S5 — HTTP status codes"
    ```
-2. **Export your slides to PDF** from PowerPoint/Keynote/Google Slides (File → Export/Print → PDF), and save it as **`lecture-05/deck.pdf`**.
-3. **Edit `lecture-05/questions.json`** — write your questions, and give each a **`"slide": N`** = the 1-based PDF page it should follow. E.g. a question with `"slide": 6` appears right after page 6, then its result, then the deck continues at page 7. Format: [`CONVENTIONS.md`](CONVENTIONS.md).
+2. **Drop your deck in** as **`lecture-05/deck.pptx`** (or `deck.key`, or an already-exported `deck.pdf`). presik converts PowerPoint/Keynote to PDF on startup, cached — using the app's own renderer if it's installed, else LibreOffice. *(No LibreOffice and not the source app? presik will tell you to install it or export a PDF yourself.)*
+3. **Edit `lecture-05/questions.json`** — write your questions, and give each a **`"slide": N`** = the 1-based slide it should follow. E.g. a question with `"slide": 6` appears right after slide 6, then its result, then the deck continues at slide 7. Format: [`CONVENTIONS.md`](CONVENTIONS.md).
 
 ### In class
 

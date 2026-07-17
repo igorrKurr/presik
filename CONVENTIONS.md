@@ -54,11 +54,14 @@ With no argument, `presik`:
 |---|---|---|---|
 | `questions.json` | yes | you | the quiz definition — schema below |
 | `deck.marp.md` | no | you | Marp slides; if present, `/slides` renders them |
-| `deck.pdf` | no | you | a PDF deck (export from PowerPoint/Keynote/Slides); if present, `/slides` renders it with the quiz interleaved. Place questions with `"slide": N` (see schema) |
+| `deck.pdf` | no | you | a PDF deck; `/slides` renders it with the quiz interleaved |
+| `deck.pptx` / `deck.key` | no | you | a PowerPoint / Keynote deck — presik converts it to PDF under the hood (cached), then treats it like `deck.pdf` |
 | `deck.marp.html` | — | engine (automatic) | build artifact from `deck.marp.md`; don't edit, don't commit |
 | `join-qr.svg` | — | engine (automatic) | QR with the current join link; rewritten every run |
 
-A session's deck is **either** `deck.marp.md` **or** `deck.pdf` (Marp wins if both exist). A deck without `questions.json` doesn't make sense (nothing to control). `questions.json` **without** a deck is a fully working mode — students and `/host` work fine, and the projector uses `/present` — there's just no `/slides`.
+A session's deck is `deck.marp.md`, `deck.pdf`, `deck.pptx`, or `deck.key` (precedence in that order: Marp wins, then a direct PDF, then a converted one). A deck without `questions.json` doesn't make sense (nothing to control). `questions.json` **without** a deck is a fully working mode — students and `/host` work fine, and the projector uses `/present` — there's just no `/slides`.
+
+**Conversion & fidelity.** `.pptx`/`.key` are converted to PDF on startup and cached in `.presik/`; presik reconverts only when the source changes. To keep it faithful, presik uses the source app's **own** renderer when it's installed — Keynote for `.key`, PowerPoint for `.pptx` (pixel-perfect) — and falls back to **LibreOffice** otherwise (good, but fonts/effects can shift). If neither is available, presik tells you to install LibreOffice or export a PDF yourself and drop it in as `deck.pdf`. Either way, animations/builds flatten to their final state and embedded media is dropped (that's inherent to a static deck) — open `/slides` once before class to eyeball it.
 
 ## `questions.json` — schema
 

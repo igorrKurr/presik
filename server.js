@@ -35,6 +35,7 @@ const QRCode = require('qrcode');
 const { openDb } = require('./db');
 const { groupSlug, bestHostIp, rankHostIps, validateAnswer, splitMarpSlides, deriveMarpMarkdown } = require('./lib');
 const { readAssetText } = require('./assets');
+const { ensureDeckPdf } = require('./convert');
 
 const ENGINE_DIR = __dirname;
 const VERSION = require('./package.json').version;
@@ -153,6 +154,8 @@ const DECK_FILE = path.join(SESSION_DIR, 'deck.marp.md');
 const DECK_HTML = path.join(SESSION_DIR, 'deck.marp.html');
 const DECK_BUILD = path.join(SESSION_DIR, '.deck.build.md'); // derived deck with auto-inserted quiz markers (kept beside the deck so relative assets resolve)
 const DECK_PDF = path.join(SESSION_DIR, 'deck.pdf');
+const DECK_PPTX = path.join(SESSION_DIR, 'deck.pptx');
+const DECK_KEY = path.join(SESSION_DIR, 'deck.key');
 const QR_FILE = path.resolve(opt('qr', path.join(SESSION_DIR, 'join-qr.svg')));
 
 if (!fs.existsSync(QUESTIONS_FILE)) {
@@ -214,8 +217,14 @@ const MARP_AVAILABLE = fs.existsSync(MARP_JS);
 // A session's deck is Marp markdown or a PDF (later: pptx/key converted to a
 // PDF under the hood). Marp wins if both are present. Either way presik owns
 // navigation on /slides, so slides and quiz stay in lockstep.
-const deckType = fs.existsSync(DECK_FILE) ? 'marp' : (fs.existsSync(DECK_PDF) ? 'pdf' : null);
+// Precedence: Marp markdown, then a PDF — given directly (deck.pdf) or
+// converted under the hood from PowerPoint/Keynote (deck.pptx / deck.key).
+const convertSrc = fs.existsSync(DECK_PDF) ? null : [DECK_PPTX, DECK_KEY].find((f) => fs.existsSync(f));
+const deckType = fs.existsSync(DECK_FILE) ? 'marp' : (fs.existsSync(DECK_PDF) || convertSrc ? 'pdf' : null);
 const deckExists = !!deckType;
+const CACHE_PDF = path.join(DATA_DIR, 'cache', name.replace(/\//g, '-') + '.pdf'); // converted decks land here
+let pdfServePath = fs.existsSync(DECK_PDF) ? DECK_PDF : null; // resolved after conversion for convertibles
+let deckError = null; // conversion failure message, surfaced on /slides
 if (deckType === 'marp') {
   try {
     const count = splitMarpSlides(fs.readFileSync(DECK_FILE, 'utf8')).slides.length;
@@ -558,8 +567,8 @@ const server = http.createServer(async (req, res) => {
   if (p === '/vendor/pdf.mjs') return send(res, 200, 'text/javascript; charset=utf-8', readAssetText('public/vendor/pdf.mjs'));
   if (p === '/vendor/pdf.worker.mjs') return send(res, 200, 'text/javascript; charset=utf-8', readAssetText('public/vendor/pdf.worker.mjs'));
   if (p === '/deck.pdf') {
-    if (deckType !== 'pdf') return send(res, 404, 'text/plain; charset=utf-8', 'no PDF deck');
-    return send(res, 200, 'application/pdf', fs.readFileSync(DECK_PDF));
+    if (deckType !== 'pdf' || !pdfServePath) return send(res, 404, 'text/plain; charset=utf-8', deckError || 'no PDF deck');
+    return send(res, 200, 'application/pdf', fs.readFileSync(pdfServePath));
   }
 
   if (p === '/slides' || p === '/slides/') {
@@ -567,6 +576,7 @@ const server = http.createServer(async (req, res) => {
     // PDF deck: presik's own pdf.js viewer renders the pages and interleaves the
     // quiz steps, driven by the same /api/control as the Marp path.
     if (deckType === 'pdf') {
+      if (!pdfServePath) return send(res, 501, 'text/plain; charset=utf-8', deckError || 'PDF deck not ready.');
       const cfg = quizConfig(isHost);
       cfg.pdf = '/deck.pdf';
       const html = readAssetText('public/deck.html').replace(QUIZ_CONFIG_MARKER, '<script>window.__PRESIK__=' + JSON.stringify(cfg) + ';</script>');
@@ -833,6 +843,20 @@ server.on('error', (e) => {
         ensureSlideHtml();
       } catch (e) {
         console.error('\n  Slide build error (' + path.relative(CONTENT_DIR, DECK_FILE) + '): ' + e.message + '\n');
+      }
+    }
+
+    // Convert a PowerPoint/Keynote deck to PDF under the hood (cached), using
+    // the source app's own renderer when available. Runs before the banner so
+    // any "install LibreOffice / export a PDF" message shows up front, not mid-class.
+    if (convertSrc) {
+      try {
+        const r = ensureDeckPdf(convertSrc, CACHE_PDF);
+        pdfServePath = r.path;
+        if (r.converter !== 'cache') console.log('  Converted ' + path.basename(convertSrc) + ' → PDF via ' + r.converter);
+      } catch (e) {
+        deckError = e.message;
+        console.error('\n  ' + e.message + '\n');
       }
     }
 

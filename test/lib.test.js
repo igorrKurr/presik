@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert');
-const { validateAnswer, groupSlug, rankHostIps, bestHostIp, toSessionName, buildDeckSteps, splitMarpSlides, deriveMarpMarkdown } = require('../lib');
+const { validateAnswer, groupSlug, rankHostIps, bestHostIp, toSessionName, buildDeckSteps, splitMarpSlides, deriveMarpMarkdown, pickConverters } = require('../lib');
 
 test('validateAnswer: choice accepts only real option ids', () => {
   const q = { type: 'choice', options: [{ id: 'a' }, { id: 'b' }] };
@@ -100,4 +100,16 @@ test('deriveMarpMarkdown: inserts question+reveal after the placed slide', () =>
 test('deriveMarpMarkdown: no placed questions → unchanged', () => {
   const md = '---\nmarp: true\n---\n\n# One';
   assert.strictEqual(deriveMarpMarkdown(md, [{ id: 'q1' }]), md);
+});
+
+test('pickConverters: fidelity-first ordering, per format and tool availability', () => {
+  // .key → Keynote only
+  assert.deepStrictEqual(pickConverters('.key', { keynote: true, soffice: true }), ['keynote']);
+  assert.deepStrictEqual(pickConverters('.key', { keynote: false, soffice: true }), []); // soffice can't do .key
+  // .pptx → PowerPoint before LibreOffice
+  assert.deepStrictEqual(pickConverters('.pptx', { powerpoint: true, soffice: true }), ['powerpoint', 'soffice']);
+  assert.deepStrictEqual(pickConverters('.pptx', { powerpoint: false, soffice: true }), ['soffice']);
+  assert.deepStrictEqual(pickConverters('.pptx', {}), []);
+  // already-PDF / unknown → nothing to convert
+  assert.deepStrictEqual(pickConverters('.pdf', { soffice: true }), []);
 });

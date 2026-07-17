@@ -74,6 +74,23 @@ function validateAnswer(q, rawValue) {
   return null;
 }
 
+// Choose which converters to try, in order, to turn a deck into a PDF — given
+// which tools are available. Fidelity-first: the source app's own renderer
+// (Keynote / PowerPoint) before LibreOffice (soffice). `.key` only converts via
+// Keynote (macOS). Returns an ordered list of adapter names; empty = no way.
+function pickConverters(ext, caps) {
+  caps = caps || {};
+  const e = String(ext || '').toLowerCase();
+  const list = [];
+  if (e === '.key') {
+    if (caps.keynote) list.push('keynote');
+  } else if (e === '.pptx' || e === '.ppt') {
+    if (caps.powerpoint) list.push('powerpoint'); // native — pixel-perfect
+    if (caps.soffice) list.push('soffice'); // good, not perfect
+  }
+  return list;
+}
+
 // Split a Marp markdown deck into its front-matter and slides. Slides are
 // separated by a `---` line at the top level (not inside a ``` / ~~~ code
 // fence); the leading `---`…`---` block is front-matter, not a separator.
@@ -149,4 +166,4 @@ function buildDeckSteps(numPages, questions) {
   return steps;
 }
 
-module.exports = { toSessionName, groupSlug, rankHostIps, bestHostIp, isPrivateV4, validateAnswer, buildDeckSteps, splitMarpSlides, deriveMarpMarkdown, VIRTUAL_IFACE };
+module.exports = { toSessionName, groupSlug, rankHostIps, bestHostIp, isPrivateV4, validateAnswer, buildDeckSteps, splitMarpSlides, deriveMarpMarkdown, pickConverters, VIRTUAL_IFACE };

@@ -23,3 +23,21 @@ jobs:
           node-version: ${{ matrix.node }}
       - run: npm ci
       - run: npm test
+
+  # Build the single-file binary and smoke-test it on each OS, so a broken SEA
+  # build or a missing embedded asset (e.g. deck.html / pdf.js) fails a PR
+  # rather than surfacing only when a release tag is cut.
+  binary:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+      - run: npm ci
+      - run: npm run build
+      - run: npm run smoke

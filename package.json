@@ -16,7 +16,8 @@
     "tunnel": "node server.js --tunnel",
     "report": "node report.js",
     "test": "node --test",
-    "build": "node build/build.js"
+    "build": "node build/build.js",
+    "smoke": "node scripts/smoke.mjs"
   },
   "dependencies": {
     "qrcode": "^1.5.4"

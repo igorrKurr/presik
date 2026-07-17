@@ -74,4 +74,24 @@ function validateAnswer(q, rawValue) {
   return null;
 }
 
-module.exports = { toSessionName, groupSlug, rankHostIps, bestHostIp, isPrivateV4, validateAnswer, VIRTUAL_IFACE };
+// Build the combined navigation sequence for a PDF deck: each page, followed by
+// the question+reveal steps of any questions placed on that page (1-based
+// `slide`). Questions without a `slide` don't appear in the deck (controlled
+// from /host only). Mirrors the inline builder in public/deck.html.
+function buildDeckSteps(numPages, questions) {
+  const bySlide = {};
+  (questions || []).forEach((q, i) => {
+    if (q && q.slide) (bySlide[q.slide] = bySlide[q.slide] || []).push(i);
+  });
+  const steps = [];
+  for (let p = 1; p <= numPages; p++) {
+    steps.push({ t: 'page', page: p });
+    (bySlide[p] || []).forEach((qi) => {
+      steps.push({ t: 'question', qi });
+      steps.push({ t: 'reveal', qi });
+    });
+  }
+  return steps;
+}
+
+module.exports = { toSessionName, groupSlug, rankHostIps, bestHostIp, isPrivateV4, validateAnswer, buildDeckSteps, VIRTUAL_IFACE };

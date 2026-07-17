@@ -65,7 +65,6 @@
     <button id="backBtn" title="Space/→ advance · ←/PageUp back">◀ Back</button>
     <button id="advBtn" class="primary">▶ Show Q1</button>
     <label class="auto"><input type="checkbox" id="autoRev"> Auto-reveal when everyone's answered</label>
-    <button id="hideBtn" title="Clears the /present projector overlay during content slides">Hide overlay</button>
     <span class="note" id="ctlHint"></span>
     <button class="danger" id="clearBtn">Clear answers</button>
   </div>
@@ -84,7 +83,6 @@
   const advBtn = document.getElementById('advBtn');
   const backBtn = document.getElementById('backBtn');
   const autoRev = document.getElementById('autoRev');
-  const hideBtn = document.getElementById('hideBtn');
   const ctlHint = document.getElementById('ctlHint');
 
   function advancePlan(s) {
@@ -108,7 +106,6 @@
   advBtn.onclick = doAdvance;
   backBtn.onclick = doBack;
   autoRev.onchange = () => ctl({ action: 'auto', autoReveal: autoRev.checked });
-  hideBtn.onclick = () => ctl({ action: 'overlay', show: !!(S && S.overlayHidden) }); // toggle the /present overlay
   document.getElementById('clearBtn').onclick = () => { if (confirm('Clear answers for this question?')) ctl({ action: 'clear' }); };
 
   // Space / → (and PageDown, which most presentation clickers send) = advance;
@@ -127,7 +124,6 @@
     advBtn.disabled = !p || !p.body;
     backBtn.disabled = !backPlan(s);
     if (document.activeElement !== autoRev) autoRev.checked = !!s.autoReveal;
-    hideBtn.textContent = s.overlayHidden ? 'Show overlay' : 'Hide overlay';
     ctlHint.textContent = s.autoReveal ? 'reveals itself once all are in' : '';
   }
 

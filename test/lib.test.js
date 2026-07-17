@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert');
-const { validateAnswer, groupSlug, rankHostIps, bestHostIp, toSessionName } = require('../lib');
+const { validateAnswer, groupSlug, rankHostIps, bestHostIp, toSessionName, buildDeckSteps } = require('../lib');
 
 test('validateAnswer: choice accepts only real option ids', () => {
   const q = { type: 'choice', options: [{ id: 'a' }, { id: 'b' }] };
@@ -61,4 +61,19 @@ test('toSessionName: POSIX path relative to root, "." for the root itself', () =
   assert.strictEqual(toSessionName('/a', '/a/s01', '/'), 's01');
   assert.strictEqual(toSessionName('/a', '/a/web-dev/s01', '/'), 'web-dev/s01');
   assert.strictEqual(toSessionName('/a', '/a', '/'), '.');
+});
+
+test('buildDeckSteps: interleaves question+reveal after each placed page', () => {
+  const qs = [{ id: 'q1', slide: 2 }, { id: 'q2', slide: 3 }, { id: 'q3' }]; // q3 has no slide → not in the deck
+  assert.deepStrictEqual(buildDeckSteps(4, qs), [
+    { t: 'page', page: 1 },
+    { t: 'page', page: 2 }, { t: 'question', qi: 0 }, { t: 'reveal', qi: 0 },
+    { t: 'page', page: 3 }, { t: 'question', qi: 1 }, { t: 'reveal', qi: 1 },
+    { t: 'page', page: 4 },
+  ]);
+});
+
+test('buildDeckSteps: multiple questions on one page keep questions.json order', () => {
+  const steps = buildDeckSteps(1, [{ id: 'a', slide: 1 }, { id: 'b', slide: 1 }]);
+  assert.deepStrictEqual(steps.map((s) => s.t + (s.qi ?? '')), ['page', 'question0', 'reveal0', 'question1', 'reveal1']);
 });

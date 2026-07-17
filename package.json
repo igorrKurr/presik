@@ -24,6 +24,7 @@
   "devDependencies": {
     "@marp-team/marp-cli": "4.4.1",
     "esbuild": "^0.28.1",
+    "pdfjs-dist": "^6.1.200",
     "postject": "^1.0.0-alpha.6"
   }
 }

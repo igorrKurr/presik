@@ -53,11 +53,12 @@ With no argument, `presik`:
 | File | Required | Who writes it | Purpose |
 |---|---|---|---|
 | `questions.json` | yes | you | the quiz definition — schema below |
-| `deck.marp.md` | no | you | Marp slides; if present, `/slides` appears |
+| `deck.marp.md` | no | you | Marp slides; if present, `/slides` renders them |
+| `deck.pdf` | no | you | a PDF deck (export from PowerPoint/Keynote/Slides); if present, `/slides` renders it with the quiz interleaved. Place questions with `"slide": N` (see schema) |
 | `deck.marp.html` | — | engine (automatic) | build artifact from `deck.marp.md`; don't edit, don't commit |
 | `join-qr.svg` | — | engine (automatic) | QR with the current join link; rewritten every run |
 
-`deck.marp.md` without `questions.json` doesn't make sense (nothing to show on `/host`, nothing to control). `questions.json` without `deck.marp.md` is a fully working mode: students and `/host` work fine, there's just no `/slides`.
+A session's deck is **either** `deck.marp.md` **or** `deck.pdf` (Marp wins if both exist). A deck without `questions.json` doesn't make sense (nothing to control). `questions.json` **without** a deck is a fully working mode — students and `/host` work fine, and the projector uses `/present` — there's just no `/slides`.
 
 ## `questions.json` — schema
 
@@ -76,6 +77,7 @@ With no argument, `presik`:
       ],
       "min": 1,
       "max": 5,
+      "slide": 6,
       "explain": "Shown to students, and on the slides, AFTER reveal",
       "hint": "Visible ONLY TO YOU (on /host): what to do with the result"
     }
@@ -86,6 +88,7 @@ With no argument, `presik`:
 - **`choice`** — options; more than one can be correct (`"correct": true`). Requires a non-empty `options`.
 - **`text`** — free-form answer (cold open, exit ticket). No `options` needed.
 - **`scale`** — a `min`..`max` scale (typically 1–5). The server computes the average.
+- **`slide`** — *(PDF decks only)* the 1-based PDF page this question follows: the question and its result are inserted right after that page in the deck sequence. Omit it to keep a question out of the deck flow (still controllable from `/host`). Marp decks ignore `slide` — they place questions with inline markers instead (below).
 
 The file is validated at server startup — a JSON error or a malformed question stops the launch immediately, not in the middle of class. `presik new <session>` scaffolds a starting `questions.json` (and `deck.marp.md`, unless `--questions-only`) from `templates/` for you — see below.
 

@@ -151,6 +151,7 @@ const course = path.dirname(sessionPath) === '.' ? null : path.dirname(sessionPa
 const QUESTIONS_FILE = path.join(SESSION_DIR, 'questions.json');
 const DECK_FILE = path.join(SESSION_DIR, 'deck.marp.md');
 const DECK_HTML = path.join(SESSION_DIR, 'deck.marp.html');
+const DECK_PDF = path.join(SESSION_DIR, 'deck.pdf');
 const QR_FILE = path.resolve(opt('qr', path.join(SESSION_DIR, 'join-qr.svg')));
 
 if (!fs.existsSync(QUESTIONS_FILE)) {
@@ -187,6 +188,12 @@ quiz.questions.forEach((q, i) => {
     q.min = q.min || 1;
     q.max = q.max || 5;
   }
+  // Optional deck placement (PDF decks): the question appears right after this
+  // 1-based page. Marp decks ignore it — they use inline markers instead.
+  if (q.slide != null && (!Number.isInteger(q.slide) || q.slide < 1)) {
+    console.error(`  Question ${q.id}: "slide" must be a positive integer (page number)`);
+    process.exit(1);
+  }
 });
 
 // ---------------------------------------------------------------- slides (Marp)
@@ -203,7 +210,11 @@ const MARP_JS = path.join(ENGINE_DIR, 'node_modules', '@marp-team', 'marp-cli', 
 // --omit=dev), so slide-building degrades gracefully: everything else — phones,
 // /host, /present — works, and /slides explains how to get Marp support.
 const MARP_AVAILABLE = fs.existsSync(MARP_JS);
-const deckExists = fs.existsSync(DECK_FILE);
+// A session's deck is Marp markdown or a PDF (later: pptx/key converted to a
+// PDF under the hood). Marp wins if both are present. Either way presik owns
+// navigation on /slides, so slides and quiz stay in lockstep.
+const deckType = fs.existsSync(DECK_FILE) ? 'marp' : (fs.existsSync(DECK_PDF) ? 'pdf' : null);
+const deckExists = !!deckType;
 
 // Injects a link to embed.js/css plus a marker where the server will splice
 // in the live config on EVERY /slides request (not here, because here we
@@ -235,6 +246,7 @@ function quizConfig(isHost) {
       options: (q.options || []).map((o) => ({ id: o.id, text: o.text })),
       min: q.min,
       max: q.max,
+      slide: q.slide || null,
     })),
   };
 }
@@ -252,9 +264,7 @@ function ensureSlideHtml() {
 // ---------------------------------------------------------------- state
 // autoReveal is an opt-in, per-run teacher preference (toggled from /host):
 // when on, a question reveals itself once every connected student has answered.
-// overlayHidden lets the teacher clear the projector overlay (the /present
-// compositor) during pure-content stretches; any navigation shows it again.
-const state = { index: -1, revealed: false, autoReveal: false, overlayHidden: false };
+const state = { index: -1, revealed: false, autoReveal: false };
 const answers = new Map(); // qid -> Map(clientId -> value)
 const students = new Set();
 const streams = new Set();
@@ -443,7 +453,6 @@ const snapshot = (isHost) =>
     total: quiz.questions.length,
     revealed: state.revealed,
     autoReveal: state.autoReveal,
-    overlayHidden: state.overlayHidden,
     question: questionFor(isHost),
     stats: stats(isHost),
     joinUrl,
@@ -510,9 +519,9 @@ const server = http.createServer(async (req, res) => {
     return send(res, 200, 'text/html; charset=utf-8', readAssetText('public/host.html'));
   }
 
-  // Projector "live layer" for non-Marp decks — view-only (no key): shows the
-  // join QR, the answer counter, and the distribution after reveal. Follows
-  // revealed state like a student; controls nothing.
+  // Stand-alone projector view for a questions-only session (no deck) — shows
+  // the join QR, the answer counter, and the distribution after reveal. A
+  // session with a deck uses /slides instead. View-only.
   if (p === '/present' || p === '/present/')
     return send(res, 200, 'text/html; charset=utf-8', readAssetText('public/present.html'));
 
@@ -525,13 +534,29 @@ const server = http.createServer(async (req, res) => {
   if (p === '/embed.js') return send(res, 200, 'application/javascript; charset=utf-8', readAssetText('public/embed.js'));
   if (p === '/embed.css') return send(res, 200, 'text/css; charset=utf-8', readAssetText('public/embed.css'));
 
+  // Self-hosted pdf.js (no CDN — works offline and inside a CSP).
+  if (p === '/vendor/pdf.mjs') return send(res, 200, 'text/javascript; charset=utf-8', readAssetText('public/vendor/pdf.mjs'));
+  if (p === '/vendor/pdf.worker.mjs') return send(res, 200, 'text/javascript; charset=utf-8', readAssetText('public/vendor/pdf.worker.mjs'));
+  if (p === '/deck.pdf') {
+    if (deckType !== 'pdf') return send(res, 404, 'text/plain; charset=utf-8', 'no PDF deck');
+    return send(res, 200, 'application/pdf', fs.readFileSync(DECK_PDF));
+  }
+
   if (p === '/slides' || p === '/slides/') {
-    if (!deckExists) return send(res, 404, 'text/plain; charset=utf-8', 'No deck.marp.md for session "' + name + '"');
+    if (!deckType) return send(res, 404, 'text/plain; charset=utf-8', 'No deck (deck.marp.md or deck.pdf) for session "' + name + '"');
+    // PDF deck: presik's own pdf.js viewer renders the pages and interleaves the
+    // quiz steps, driven by the same /api/control as the Marp path.
+    if (deckType === 'pdf') {
+      const cfg = quizConfig(isHost);
+      cfg.pdf = '/deck.pdf';
+      const html = readAssetText('public/deck.html').replace(QUIZ_CONFIG_MARKER, '<script>window.__PRESIK__=' + JSON.stringify(cfg) + ';</script>');
+      return send(res, 200, 'text/html; charset=utf-8', html);
+    }
+    // Marp deck: build to HTML and inject the live config.
     if (!MARP_AVAILABLE)
       return send(res, 501, 'text/plain; charset=utf-8',
         'Marp slide-building isn\'t available in this build.\n' +
-        'Present your PowerPoint/Keynote deck as-is and use /present + /host instead,\n' +
-        'or install presik via npm (which includes Marp) for the /slides path.');
+        'Use a PDF deck (deck.pdf) instead, or install presik via npm (which includes Marp).');
     try {
       const htmlPath = ensureSlideHtml();
       let html = fs.readFileSync(htmlPath, 'utf8');
@@ -638,7 +663,6 @@ const server = http.createServer(async (req, res) => {
       state.revealed = true;
     }
     else if (action === 'auto') state.autoReveal = !!body.autoReveal; // /host toggle
-    else if (action === 'overlay') state.overlayHidden = !body.show; // show/hide the projector overlay
     else if (action === 'clear') {
       const q = cur();
       if (q) {
@@ -653,8 +677,6 @@ const server = http.createServer(async (req, res) => {
       answers.clear();
       if (runId) db.prepare('DELETE FROM answers WHERE run_id = ?').run(runId);
     }
-    // Any question navigation brings the projector overlay back into view.
-    if (['next', 'prev', 'goto', 'reveal'].includes(action)) state.overlayHidden = false;
     persistLiveState();
     broadcast();
     return send(res, 200, 'application/json', '{"ok":true}');
@@ -740,9 +762,10 @@ function banner() {
   );
   console.log('\n  Students:  ' + joinUrl);
   console.log('  Teacher:   ' + joinUrl.replace(/\/$/, '') + '/host?key=' + KEY + '  (control + live view — keep private)');
-  if (deckExists && MARP_AVAILABLE) console.log('  Slides:    ' + joinUrl.replace(/\/$/, '') + '/slides?key=' + KEY + '  (without ?key= — view only, no control)');
-  else if (deckExists) console.log('  Slides:    (deck.marp.md found, but Marp isn\'t in this build — use /present, or install via npm for /slides)');
-  console.log('  Projector: ' + joinUrl.replace(/\/$/, '') + '/present  (QR + live results — for a PowerPoint/Keynote deck)');
+  if (deckType === 'marp' && MARP_AVAILABLE) console.log('  Slides:    ' + joinUrl.replace(/\/$/, '') + '/slides?key=' + KEY + '  (without ?key= — view only, no control)');
+  else if (deckType === 'pdf') console.log('  Slides:    ' + joinUrl.replace(/\/$/, '') + '/slides?key=' + KEY + '  (PDF deck; without ?key= — view only)');
+  else if (deckType === 'marp') console.log('  Slides:    (deck.marp.md found, but Marp isn\'t in this build — use a PDF deck, or install via npm)');
+  if (!deckType) console.log('  Projector: ' + joinUrl.replace(/\/$/, '') + '/present  (QR + live results — questions-only session)');
   if (!KEY_GIVEN)
     console.log('\n  Key:       ' + KEY + '  (random this run; anyone with it controls the quiz — pin your own with --key)');
   console.log('\n  DB:        ' + path.relative(process.cwd(), DB_FILE) + '  (for analysis — presik-report)');
@@ -785,7 +808,7 @@ server.on('error', (e) => {
   server.listen(PORT, async () => {
     await setJoinUrl('http://' + localIp() + ':' + PORT + '/');
 
-    if (deckExists && MARP_AVAILABLE) {
+    if (deckType === 'marp' && MARP_AVAILABLE) {
       try {
         ensureSlideHtml();
       } catch (e) {

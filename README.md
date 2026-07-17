@@ -16,22 +16,22 @@ The single most important thing to understand is that **different people look at
 |---|---|---|---|---|---|
 | **Students** | `/` | each student | their own phone | the current question to answer; the result after you reveal | answer only |
 | **Your cockpit** | `/host?key=…` | **you, privately** | your phone / tablet / laptop | the question, the live distribution **even before reveal**, your private `hint`, and the controls | **yes — you drive the quiz here** |
-| **The room** | `/present` | the whole class | the projector | your **own deck, screen-captured**, with the quiz composited on top: join QR, a live "answered N/M" counter, and — **only after you reveal** — the distribution + correct answer | no (view-only) |
-| **The room, Marp** | `/slides?key=…` | the whole class | the projector | your **Marp deck** with the quiz embedded in it; **arrow keys drive it** | yes, via arrow keys |
+| **The room** | `/slides?key=…` | the whole class | the projector (or a Zoom screen-share) | your **deck** — Marp or a PDF — rendered with the quiz **interleaved into it**; **arrow keys drive slides and quiz together** | yes, via arrow keys |
+| *(no deck)* | `/present` | the whole class | the projector | for a **questions-only** session: join QR, live counter, distribution after reveal | no (view-only) |
 
-### Why `/host` and `/present` both exist (they are not duplicates)
+### Why `/host` and `/slides` aren't the same thing
 
 They render some of the same things, but they have **opposite audiences and opposite rules** — that difference *is* the product:
 
-- **`/present` is for the room.** It deliberately **hides the distribution and the correct answer until you reveal** — otherwise students just vote with the visible majority and you lose the real signal. It has **no controls**. You put this on the projector.
+- **`/slides` is for the room.** It deliberately **hides the distribution and the correct answer until you reveal** — otherwise students just vote with the visible majority and you lose the real signal. Opened without `?key=` it controls nothing.
 - **`/host` is for you, and only you.** It shows the distribution **immediately** (that's how you decide whether it's safe to move on), it shows your private **`hint`**, and it has the **buttons** to run the quiz. You keep this in your hand. **Never put `/host` on the projector** — it would spoil the vote and leak your notes.
 
-And the **room's screen comes from one of two places**, depending on your slides:
+**presik owns the deck**, so the room's screen is always `/slides`, whatever your source format:
 
-- **Marp deck →** use **`/slides`**. The quiz is baked into your slides, so `/slides` *is* the room's screen and you don't need `/present`.
-- **PowerPoint / Keynote / anything else →** use **`/present`**: it screen-captures your own deck and composites the quiz on top, so *it* becomes the room's screen (your slide + the live layer, one surface).
+- **Marp deck (`deck.marp.md`)** → rendered to HTML slides, quiz on marker slides.
+- **PDF deck (`deck.pdf`)** → rendered by pdf.js, quiz interleaved at the pages you choose (a question's `"slide": N`). Export from Keynote/PowerPoint/Google Slides — or later, drop the `.pptx`/`.key` and presik converts it under the hood.
 
-So a typical class uses **three screens at once**: the projector (`/slides` *or* `/present`), your private `/host`, and every student's `/`.
+Because it's one fullscreen web page, the same `/slides` is what you put on the projector **or** screen-share in Zoom. So a class uses **three screens at once**: the room's `/slides`, your private `/host`, and every student's `/`.
 
 ---
 
@@ -90,14 +90,13 @@ Then it prints the addresses you'll open — this is your map for the whole clas
   Students:  http://192.168.1.42:3000/
   Teacher:   http://192.168.1.42:3000/host?key=85d39768   (control + live view — keep private)
   Slides:    http://192.168.1.42:3000/slides?key=85d39768 (without ?key= — view only, no control)
-  Projector: http://192.168.1.42:3000/present             (QR + live results — for a PowerPoint/Keynote deck)
 
   Key:       85d39768   (random this run; anyone with it controls the quiz — pin your own with --key)
 
   DB:        .presik/data.db   (for analysis — presik-report)
 ```
 
-- The **`Slides:` line only appears if the session has a `deck.marp.md`** and Marp is available. A questions-only session skips it — you'll use `Projector:` (`/present`) instead.
+- The **`Slides:` line appears when the session has a deck** — `deck.marp.md` (needs Marp) or `deck.pdf`. A **questions-only** session shows a `Projector:` line (`/present`) instead — a stand-alone view with the QR + live results.
 - The **teacher key is random every run**. It's what stops anyone else on the Wi-Fi from driving or resetting your class, so treat the `/host` and `/slides` links as private. Want a stable one (e.g. reused across a course)? Pass `--key yourword`.
 - If students get a link they can't reach (a VPN or Docker network can hijack the auto-detected address), pass `--host 192.168.x.x` with your real LAN address — the terminal hints at this when it sees more than one candidate.
 
@@ -105,45 +104,35 @@ All flags (`--dir`, `--port`, `--key`, `--host`, `--group`, `--tunnel`, `--qr`, 
 
 ---
 
-## Scenario A — PowerPoint / Keynote, step by step
+## Scenario A — a PowerPoint / Keynote deck (via PDF), step by step
 
-You keep presenting in your usual app; presik adds the interactive layer beside it. **No conversion, no export.** This example uses a questions-only session (no Marp deck).
+You keep your slides in your usual app; presik renders them and interleaves the quiz, so **you present from presik** and everything stays in sync — same as Marp. For now you export a PDF once *(auto-conversion of `.pptx`/`.key` is on the roadmap)*.
 
 ### Set up once (before the class, at your desk)
 
-1. **Create the quiz file:**
+1. **Create the session:**
    ```bash
    cd ~/courses/web-dev            # your content root
    presik new lecture-05 --questions-only --title "S5 — HTTP status codes"
    ```
-   This makes `lecture-05/questions.json` with example questions.
-2. **Edit `lecture-05/questions.json`** — replace the examples with your questions. Note each question's `id` (e.g. `q-404`); you'll want the question *text* on a slide in step 3. Format: [`CONVENTIONS.md`](CONVENTIONS.md).
-3. **In PowerPoint/Keynote, add one normal slide per question** where you want to ask it, with the question text on it (so the room can read it). Nothing special — just a slide you write yourself.
-
-### Display setup (do this once)
-
-presik projects *your* slide by screen-capturing it, so the cleanest arrangement is the normal "presenter" one: **extend** your displays (don't mirror), present your deck full-screen **on your laptop's own screen**, and let presik be full-screen **on the projector**, capturing your laptop screen. You look at your deck; the room sees presik (your slide + the quiz) on the projector. *(Single mirrored display works too — present your deck in a window and share that window — but extended displays are smoother.)*
+2. **Export your slides to PDF** from PowerPoint/Keynote/Google Slides (File → Export/Print → PDF), and save it as **`lecture-05/deck.pdf`**.
+3. **Edit `lecture-05/questions.json`** — write your questions, and give each a **`"slide": N`** = the 1-based PDF page it should follow. E.g. a question with `"slide": 6` appears right after page 6, then its result, then the deck continues at page 7. Format: [`CONVENTIONS.md`](CONVENTIONS.md).
 
 ### In class
 
-4. **Start presik** from your content root:
+4. **Start presik:**
    ```bash
    cd ~/courses/web-dev
    presik lecture-05 --group "3-A"      # or omit --group and type the name when asked
    ```
-5. **Read the printed addresses.** You'll use `Teacher:` (your phone), `Students:`, and the projector page below. Note the random **Key** in the `?key=…`.
-6. **On the projector**, open **Chrome** to **`http://localhost:<port>/present`** — use `localhost` (not the LAN address); screen capture only works from a secure origin, and your own machine's `localhost` counts. Click **`⛶ Fullscreen`**.
-7. Click **`▶ Share your slides`** and pick your **laptop screen** (or your PowerPoint/Keynote *window*). Your slide now fills the projector, with a small join QR in the corner.
-8. **On your phone**, open the **`Teacher:` URL** (`http://…/host?key=…`) — your remote.
-9. **Students** scan the QR on the projector. Watch "connected" climb on your phone.
-10. **Present normally with your clicker.** When you reach a question, tap **`▶ Show Q1`** on your phone. A card with the join QR and a live counter appears over your slide; phones light up.
-11. **When enough have answered** (you see the count and your private `hint` on your phone), tap **`👁 Reveal`**. A result panel with the distribution and correct answer appears over your slide. Discuss.
-12. **Advance your deck** to the next question, tap **`▶ Show Q2`**, repeat. (`◀ Back` undoes a step; **Hide overlay** clears the projector overlay during pure-content slides.)
-13. **When class ends,** press **`Ctrl+C`**. Answers are saved; analyse later with `presik report`.
+5. **Read the printed addresses.** Note the random **Key** in the `?key=…`.
+6. **On the projector**, open the **`Slides:` URL** (`http://…/slides?key=…`) and press **`f`** for fullscreen. *(For a Zoom class, just screen-share this browser window instead of a projector — same thing; remote students answer via a `--tunnel` URL.)*
+7. **On your phone**, open the **`Teacher:` URL** (`/host?key=…`) — to watch the live distribution and your private `hint`.
+8. **Students** scan the join QR (shown in the corner of every slide, and full-screen on the quiz slides).
+9. **Present with the arrow keys.** Your PDF pages show as slides; when you arrow onto a **question step** it goes live and phones light up; the next arrow **reveals** the result; the arrow after that continues your deck. One key drives slides *and* quiz.
+10. **When class ends,** press **`Ctrl+C`**. Answers are saved; analyse later with `presik report`.
 
-> **Fewer taps:** turn on the **Auto-reveal** checkbox on `/host` and each question reveals itself once everyone connected has answered — so step 11 happens on its own and each question is a single tap.
->
-> **No screen capture?** If you open `/present` on the LAN address instead of `localhost` (or in a browser without screen capture), it falls back to a **stand-alone full-screen quiz view** — put that on a second display and present your deck on the projector separately.
+> **Fewer taps:** the **Auto-reveal** checkbox on `/host` reveals a question once everyone connected has answered — so you just arrow onto the question and it reveals itself when the room is in.
 
 ---
 
@@ -194,7 +183,7 @@ Here the quiz lives *inside* your Markdown slides, and **paging through them is 
 
 There's one source of truth: the **server's current state** (which question is live, whether it's revealed). Every screen subscribes to it over a live stream (`/api/stream`) and updates instantly.
 
-- **Marp `/slides`** reports the slide you're on (via the page's URL fragment — a stable, public part of Marp's output, not a fragile internal) and asks the server to make that question live / reveal it.
+- **`/slides`** (Marp or PDF) walks a single sequence of steps — *slide, slide, [question], [reveal], slide…* — and as you arrow onto a question/reveal step it asks the server to make that question live / reveal it. (For Marp it reads the slide from the page's URL fragment; for a PDF it tracks the step directly — either way presik owns navigation.)
 - **`/host` buttons** (and keys) ask the server to do the same things.
 - Both go through the same control channel (`/api/control`, key-protected), so **they can be used together and never drift** — drive from the slides, or from `/host`, or both.
 
@@ -204,14 +193,14 @@ Only the teacher key can control. Opening `/slides` **without** `?key=` (say, a 
 
 | | before you reveal | after you reveal |
 |---|---|---|
-| **Students `/`** and **the room `/present`** / `/slides` | the question only — **no** distribution, **no** correct answer | distribution + correct answer + `explain` |
+| **Students `/`** and **the room `/slides`** (no key) | the question only — **no** distribution, **no** correct answer | distribution + correct answer + `explain` |
 | **You, `/host`** | question **+ live distribution** + your `hint` | same, plus correct answer marked |
 
 This asymmetry is the whole point: the room can't vote with the majority, and you get the real signal in time to act on it.
 
 **One phone, one vote** — an anonymous id in the phone's `localStorage`; students can change their answer until you reveal. It's browser-generated, so it isn't a hard identity: the server caps how many distinct ids and how fast answers can come from one device, which keeps casual double-voting out of the distribution — but it isn't tamper-proof, and isn't meant to be. This is formative feedback, not an exam.
 
-**"Connected" counts only real students** (`/`). The projector (`/present`, `/slides`) and your `/host` don't inflate it. Dead connections (a phone off Wi-Fi, a backgrounded tab) drop within ~25s, so the count doesn't accumulate ghosts.
+**"Connected" counts only real students** (`/`). The projector (`/slides` or `/present`) and your `/host` don't inflate it. Dead connections (a phone off Wi-Fi, a backgrounded tab) drop within ~25s, so the count doesn't accumulate ghosts.
 
 ---
 

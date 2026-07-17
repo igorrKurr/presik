@@ -5,153 +5,39 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Quiz — presenter</title>
 <!-- presik -->
-<!-- The projector surface for non-Marp decks. It screen-captures your
-     PowerPoint/Keynote *window* and shows it full-screen, compositing the quiz
-     (join QR, answer counter, and the result after reveal) as crisp HTML that
-     appears only while a question is live. Screen capture needs a secure
-     context, so open this on the presenting machine at http://localhost:<port>.
-     Where capture isn't available, it falls back to a stand-alone full-screen
-     quiz view you can put on a second display. View-only: controls nothing. -->
+<!-- Stand-alone projector view for a questions-only session (no deck). Shows
+     the join QR, the live answer counter, and the distribution after reveal.
+     For a session WITH a deck (deck.pdf or deck.marp.md), use /slides instead —
+     it renders your slides with the quiz interleaved. View-only. -->
 <link rel="stylesheet" href="/embed.css">
 <style>
   html, body { margin: 0; height: 100%; background: #0b1118; color: #f1f5f9;
     font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; overflow: hidden; }
-  #stage { position: relative; height: 100vh; width: 100vw; }
-  #cap { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain;
-    background: #000; display: none; }
-  #overlay { position: absolute; inset: 0; display: none; pointer-events: none; }
-  #standalone { position: absolute; inset: 0; }
-  #standalone #live { height: 100%; padding: 40px; box-sizing: border-box; }
+  #live { height: 100vh; padding: 40px; box-sizing: border-box; }
   .conn { height: 100%; display: flex; align-items: center; justify-content: center; color: #94a3b8; font-size: 22px; }
-
-  /* setup screen (capture available, not sharing yet) */
-  .setup { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; text-align: center; }
-  .setup .big { font-size: 24px; }
-  .setup .sub { color: #94a3b8; font-size: 18px; max-width: 620px; }
-
-  /* control bar */
-  #bar { position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 20;
-    display: flex; gap: 8px; align-items: center; background: rgba(16,22,31,.82);
-    border: 1px solid #223041; border-radius: 10px; padding: 7px 9px; }
-  #bar button { background: #1b2634; color: #f1f5f9; border: 1px solid #223041;
-    border-radius: 7px; padding: 8px 13px; font-size: 14px; cursor: pointer; }
-  #bar button.primary { background: #38bdf8; color: #0b1118; border-color: #38bdf8; font-weight: 600; }
-  #bar button[hidden] { display: none; }
-  #bar .note { color: #94a3b8; font-size: 13px; max-width: 320px; }
-  #bar.faint { opacity: .18; transition: opacity .4s; }
-  #bar.faint:hover { opacity: 1; }
-
-  /* composited overlay pieces (over the captured slide) */
-  .ov { position: absolute; pointer-events: none; background: rgba(11,17,24,.86);
-    border: 1px solid rgba(56,189,248,.35); border-radius: 14px; backdrop-filter: blur(3px); }
-  .ov-chip { left: 26px; bottom: 26px; display: flex; align-items: center; gap: 12px; padding: 12px 16px; }
-  .ov-chip img { width: 92px; height: 92px; background: #fff; border-radius: 8px; padding: 5px; display: block; }
-  .ov-chip .lbl { font-size: 15px; color: #38bdf8; letter-spacing: .06em; text-transform: uppercase; }
-  .ov-chip .url { font-size: 15px; color: #cbd5e1; }
-  .ov-card { right: 30px; bottom: 30px; display: flex; flex-direction: column; align-items: center;
-    gap: 10px; padding: 20px 24px; max-width: 360px; }
-  .ov-card img { width: 190px; height: 190px; background: #fff; border-radius: 10px; padding: 7px; display: block; }
-  .ov-card .cta { font-size: 22px; font-weight: 600; color: #4ade80; }
-  .ov-card .count { font-size: 18px; color: #cbd5e1; }
-  .ov-panel { left: 30px; right: 30px; bottom: 30px; padding: 20px 26px; }
-  .ov-panel .head { font-size: 16px; letter-spacing: .06em; text-transform: uppercase; color: #38bdf8; margin-bottom: 12px; }
-  .ov-panel .quiz-opts { max-width: none; }
-  .ov-panel .quiz-explain { margin-top: 12px; }
 </style>
 </head>
 <body>
-  <div id="bar">
-    <button id="shareBtn" class="primary" hidden>▶ Share your slides</button>
-    <button id="stopBtn" hidden>■ Stop sharing</button>
-    <button id="fsBtn">⛶ Fullscreen</button>
-    <span class="note" id="barNote"></span>
-  </div>
-  <div id="stage">
-    <video id="cap" autoplay muted playsinline></video>
-    <div id="overlay"></div>
-    <div id="standalone"><div id="live"><div class="conn">Connecting…</div></div></div>
-  </div>
+  <div id="live"><div class="conn">Connecting…</div></div>
 <script>
   var QR_SRC = location.origin + '/qr.svg';
   var LAST = null;
-  var sharing = false;
-  var stream = null;
-  var supported = !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia && window.isSecureContext);
-
-  var cap = document.getElementById('cap');
-  var overlay = document.getElementById('overlay');
-  var standalone = document.getElementById('standalone');
   var liveEl = document.getElementById('live');
-  var bar = document.getElementById('bar');
-  var shareBtn = document.getElementById('shareBtn');
-  var stopBtn = document.getElementById('stopBtn');
-  var barNote = document.getElementById('barNote');
 
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
     });
   }
-  function bar_(pct) { return '<div class="quiz-bar"><div class="quiz-bar-fill" style="width:' + pct + '%"></div></div>'; }
   function joinUrl() { return (LAST && LAST.joinUrl) || ''; }
-
-  // ---------- composited overlay (shown over the captured slide) ----------
-  function joinChip() {
-    return '<div class="ov ov-chip"><img src="' + QR_SRC + '" alt="Join QR">' +
-      '<div><div class="lbl">Join</div><div class="url">' + esc(joinUrl()) + '</div></div></div>';
-  }
-  function questionCard(s) {
-    var st = s.stats || {};
-    return '<div class="ov ov-card"><img src="' + QR_SRC + '" alt="Join QR">' +
-      '<div class="cta">Answer on your phone</div>' +
-      '<div class="count">' + (st.answered || 0) + ' / ' + (st.connected || 0) + ' answered</div></div>';
-  }
-  // The bars/answers + explain — shared by the composited panel and the
-  // stand-alone reveal slide, without either wrapper.
-  function revealBody(s) {
-    var q = s.question, st = s.stats || {};
-    var body = '';
-    if (q.type === 'choice') {
-      var counts = st.counts || {}, total = Object.keys(counts).reduce(function (a, k) { return a + counts[k]; }, 0) || 1;
-      var correct = q.correct || [];
-      body = '<div class="quiz-opts">' + (q.options || []).map(function (o) {
-        var c = counts[o.id] || 0, pct = Math.round((c / total) * 100), ok = correct.indexOf(o.id) >= 0;
-        return '<div class="quiz-opt' + (ok ? ' quiz-correct' : '') + '"><div class="quiz-opt-row"><span>' +
-          esc(o.text) + '</span><span>' + c + ' · ' + pct + '%</span></div>' + bar_(pct) + '</div>';
-      }).join('') + '</div>';
-    } else if (q.type === 'scale') {
-      var c2 = st.counts || {}, keys = Object.keys(c2);
-      var maxc = Math.max.apply(null, [1].concat(keys.map(function (k) { return c2[k]; })));
-      body = '<div class="quiz-opts">' + keys.map(function (k) {
-        var c = c2[k], pct = Math.round((c / maxc) * 100);
-        return '<div class="quiz-opt"><div class="quiz-opt-row"><span>' + esc(k) + '</span><span>' + c + '</span></div>' + bar_(pct) + '</div>';
-      }).join('') + '</div>' + (st.avg ? '<div class="quiz-note">Average: ' + esc(st.avg) + '</div>' : '');
-    } else {
-      var texts = st.texts || [];
-      body = '<div class="quiz-texts">' + (texts.length
-        ? texts.slice(0, 10).map(function (t) { return '<div class="quiz-text-item">' + esc(t) + '</div>'; }).join('')
-        : '<div class="quiz-muted">No answers yet</div>') + '</div>';
-    }
-    return body + (q.explain ? '<div class="quiz-explain">' + esc(q.explain) + '</div>' : '');
-  }
-  function revealPanel(s) {
-    return '<div class="ov ov-panel"><div class="head">Result</div>' + revealBody(s) + '</div>';
-  }
-  function buildOverlay(s) {
-    var q = s && s.question;
-    var live = q && s.index >= 0 && !s.overlayHidden;
-    if (!live) return joinChip();               // between questions: just a small join chip
-    if (!s.revealed) return joinChip() + questionCard(s);
-    return revealPanel(s);                        // reveal panel is full-width; it stands alone
-  }
-
-  // ---------- stand-alone full-screen view (fallback / second screen) ----------
+  function bar(pct) { return '<div class="quiz-bar"><div class="quiz-bar-fill" style="width:' + pct + '%"></div></div>'; }
   function joinBlock(size) {
     return '<div class="quiz-join quiz-join-' + size + '"><img src="' + QR_SRC + '" alt="Join QR code">' +
       (size === 'lg' ? '<div class="quiz-join-title">Scan to join</div>' : '') +
       (joinUrl() ? '<div class="quiz-join-url">' + esc(joinUrl()) + '</div>' : '') + '</div>';
   }
-  function buildStandalone(s) {
+
+  function build(s) {
     if (!s || !s.question) {
       return '<div class="quiz-slide quiz-join-slide">' + joinBlock('lg') +
         '<div class="quiz-join-note">Scan to join · keep this page open until the end</div></div>';
@@ -167,63 +53,36 @@
         '<div class="quiz-progress">Answered: ' + (st.answered || 0) + ' · connected: ' + (st.connected || 0) + '</div></div>';
       return h + joinBlock('sm') + '</div>';
     }
-    return '<div class="quiz-slide quiz-reveal-slide"><div class="quiz-kicker">Result</div>' +
-      '<div class="quiz-question-text">' + esc(q.text) + '</div>' + revealBody(s) + joinBlock('sm') + '</div>';
+    var r = '<div class="quiz-slide quiz-reveal-slide"><div class="quiz-kicker">Result</div>';
+    r += '<div class="quiz-question-text">' + esc(q.text) + '</div>';
+    if (q.type === 'choice') {
+      var counts = st.counts || {}, total = Object.keys(counts).reduce(function (a, k) { return a + counts[k]; }, 0) || 1;
+      var correct = q.correct || [];
+      r += '<div class="quiz-opts">' + (q.options || []).map(function (o) {
+        var c = counts[o.id] || 0, pct = Math.round((c / total) * 100), ok = correct.indexOf(o.id) >= 0;
+        return '<div class="quiz-opt' + (ok ? ' quiz-correct' : '') + '"><div class="quiz-opt-row"><span>' +
+          esc(o.text) + '</span><span>' + c + ' · ' + pct + '%</span></div>' + bar(pct) + '</div>';
+      }).join('') + '</div>';
+    } else if (q.type === 'scale') {
+      var c2 = st.counts || {}, keys = Object.keys(c2);
+      var maxc = Math.max.apply(null, [1].concat(keys.map(function (k) { return c2[k]; })));
+      r += '<div class="quiz-opts">' + keys.map(function (k) {
+        var c = c2[k], pct = Math.round((c / maxc) * 100);
+        return '<div class="quiz-opt"><div class="quiz-opt-row"><span>' + esc(k) + '</span><span>' + c + '</span></div>' + bar(pct) + '</div>';
+      }).join('') + '</div>' + (st.avg ? '<div class="quiz-note">Average: ' + esc(st.avg) + '</div>' : '');
+    } else {
+      var texts = st.texts || [];
+      r += '<div class="quiz-texts">' + (texts.length
+        ? texts.slice(0, 14).map(function (t) { return '<div class="quiz-text-item">' + esc(t) + '</div>'; }).join('')
+        : '<div class="quiz-muted">No answers yet</div>') + '</div>';
+    }
+    if (q.explain) r += '<div class="quiz-explain">' + esc(q.explain) + '</div>';
+    return r + joinBlock('sm') + '</div>';
   }
-
-  function setupScreen(s) {
-    var liveNote = (s && s.question && s.index >= 0) ? '<div class="sub" style="color:#4ade80">A question is live — share to project it over your slide.</div>' : '';
-    return '<div class="setup"><div class="quiz-join quiz-join-lg"><img src="' + QR_SRC + '" alt="Join QR code">' +
-      '<div class="quiz-join-title">Scan to join</div><div class="quiz-join-url">' + esc(joinUrl()) + '</div></div>' +
-      '<div class="big">Click <b>▶ Share your slides</b> above,</div>' +
-      '<div class="sub">then pick your PowerPoint/Keynote <b>window</b>. Your slide fills the screen and the quiz appears over it while a question is live.</div>' + liveNote + '</div>';
-  }
-
-  function render() {
-    if (sharing) { overlay.innerHTML = buildOverlay(LAST || {}); return; }
-    if (supported) { liveEl.innerHTML = setupScreen(LAST); return; }
-    liveEl.innerHTML = LAST ? buildStandalone(LAST) : '<div class="conn">Connecting…</div>';
-  }
-
-  function updateMode() {
-    cap.style.display = sharing ? 'block' : 'none';
-    overlay.style.display = sharing ? 'block' : 'none';
-    standalone.style.display = sharing ? 'none' : 'block';
-    shareBtn.hidden = !supported || sharing;
-    stopBtn.hidden = !sharing;
-    bar.classList.toggle('faint', sharing); // get out of the way once you're projecting
-    barNote.textContent = supported
-      ? (sharing ? '' : 'Share your Keynote/PowerPoint window to project it with the quiz.')
-      : 'Open this at http://localhost:' + location.port + '/present (Chrome) to overlay your slides — otherwise this is a second-screen view.';
-  }
-
-  // ---------- screen capture ----------
-  async function startShare() {
-    try {
-      stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 30 }, audio: false });
-    } catch (_) { return; } // user cancelled the picker
-    cap.srcObject = stream;
-    sharing = true;
-    stream.getVideoTracks()[0].addEventListener('ended', stopShare); // "Stop sharing" from the browser chrome
-    updateMode(); render();
-  }
-  function stopShare() {
-    if (stream) stream.getTracks().forEach(function (t) { t.stop(); });
-    stream = null; cap.srcObject = null; sharing = false;
-    updateMode(); render();
-  }
-  shareBtn.onclick = startShare;
-  stopBtn.onclick = stopShare;
-  document.getElementById('fsBtn').onclick = function () {
-    if (document.fullscreenElement) document.exitFullscreen();
-    else document.documentElement.requestFullscreen && document.documentElement.requestFullscreen();
-  };
 
   var es = new EventSource('/api/stream?embed=1');
-  es.onmessage = function (e) { try { LAST = JSON.parse(e.data); render(); } catch (_) {} };
-  es.onerror = function () { if (!LAST && !sharing) liveEl.innerHTML = '<div class="conn">Reconnecting…</div>'; };
-
-  updateMode();
+  es.onmessage = function (e) { try { LAST = JSON.parse(e.data); liveEl.innerHTML = build(LAST); } catch (_) {} };
+  es.onerror = function () { if (!LAST) liveEl.innerHTML = '<div class="conn">Reconnecting…</div>'; };
 </script>
 </body>
 </html>

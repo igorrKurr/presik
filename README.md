@@ -1,10 +1,10 @@
 # presik
 
-Live in-class quizzes for interactive lectures. Students answer from their phones, the projector shows the question and then the result, and you keep the whole room in sync — either by embedding the quiz **directly into Marp slides** (arrow keys drive the slides *and* the quiz together), or by running your existing **PowerPoint / Keynote** deck as-is with a one-button control in your hand.
+Live in-class quizzes for interactive lectures. Students answer from their phones, the projector shows the question and then the result, and **one set of arrow keys drives your slides *and* the quiz together**. Bring any deck — **Marp, PDF, PowerPoint, or Keynote** — and presik renders it with the quiz interleaved, on a projector or a Zoom screen-share.
 
 It runs **on your own machine, on the classroom network** — no accounts, no cloud, no student data leaving the room.
 
-The engine (server, slide build, analytics) and your content (a class's slides and questions) are separate. Install the engine once, then drop a `questions.json` (and, optionally, a `deck.marp.md`) into a folder — it works whether that's a single quiz, a whole course, or several courses at once. Full format contract: [`CONVENTIONS.md`](CONVENTIONS.md).
+The engine (server, deck rendering, analytics) and your content (a class's slides and questions) are separate. Install the engine once, then drop a `questions.json` (and, optionally, a deck — `deck.marp.md`, `deck.pdf`, `deck.pptx`, or `deck.key`) into a folder — it works whether that's a single quiz, a whole course, or several courses at once. Full format contract: [`CONVENTIONS.md`](CONVENTIONS.md).
 
 ---
 

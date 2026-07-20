@@ -126,6 +126,12 @@
       ctx.toast('“From” has to be below “to”.');
       return render(store.doc);
     }
+    // Mirror the server's SCALE_MAX_STEPS cap: a scale is a row of buttons, not
+    // a number-entry box, so reject a runaway range before it reaches the file.
+    if (next.max - next.min > 100) {
+      ctx.toast('That range is too wide — a scale is a handful of buttons (max 100 steps).');
+      return render(store.doc);
+    }
     ctx.pushUndo('scale range', store);
     q[k] = n;
     commit(true);

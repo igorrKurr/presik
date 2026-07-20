@@ -210,6 +210,11 @@ function buildDeckSteps(numPages, questions) {
 // the save, while a duplicate id or an option-less choice question is broken in
 // a way that would break class.
 const QUESTION_TYPES = ['choice', 'text', 'scale'];
+// A scale is a row of buttons the class taps, not a number-entry box. Cap the
+// span so a typo like "max": 2026 can't make stats() allocate a giant counts
+// object on every broadcast (and every phone paint thousands of buttons). The
+// editor's own preview stops at ~40 buttons for the same reason.
+const SCALE_MAX_STEPS = 100;
 
 function normalizeQuiz(raw, sessionName) {
   const errors = [];
@@ -268,6 +273,7 @@ function normalizeQuiz(raw, sessionName) {
       if (q.max == null) q.max = 5;
       if (!Number.isInteger(q.min) || !Number.isInteger(q.max)) errors.push('Question ' + q.id + ': "min"/"max" must be whole numbers');
       else if (q.min >= q.max) errors.push('Question ' + q.id + ': "min" (' + q.min + ') must be below "max" (' + q.max + ')');
+      else if (q.max - q.min > SCALE_MAX_STEPS) errors.push('Question ' + q.id + ': scale range ' + q.min + '..' + q.max + ' is too wide (max ' + SCALE_MAX_STEPS + ' steps) — a scale is a handful of buttons, not a number-entry box');
     }
 
     // Optional deck placement: the question appears right after this 1-based
@@ -346,4 +352,4 @@ function historyToPrune(names, max) {
   return sorted.slice(0, Math.max(0, sorted.length - max));
 }
 
-module.exports = { toSessionName, sessionSlug, parseArgs, groupSlug, rankHostIps, bestHostIp, isPrivateV4, validateAnswer, buildDeckSteps, splitMarpSlides, deriveMarpMarkdown, pickConverters, normalizeQuiz, validateConfigObject, mergeConfig, historyToPrune, CONFIG_FILE, CONFIG_SPEC, QUESTION_TYPES, VIRTUAL_IFACE };
+module.exports = { toSessionName, sessionSlug, parseArgs, groupSlug, rankHostIps, bestHostIp, isPrivateV4, validateAnswer, buildDeckSteps, splitMarpSlides, deriveMarpMarkdown, pickConverters, normalizeQuiz, validateConfigObject, mergeConfig, historyToPrune, CONFIG_FILE, CONFIG_SPEC, QUESTION_TYPES, SCALE_MAX_STEPS, VIRTUAL_IFACE };

@@ -136,6 +136,14 @@ test('normalizeQuiz: a 0-based scale survives ("0" is a bound, not "unset")', ()
   assert.strictEqual(r.quiz.questions[0].min, 0);
 });
 
+test('normalizeQuiz: a runaway scale range is rejected (would flood stats/render)', () => {
+  const err = (q) => normalizeQuiz({ questions: [].concat(q) }, 's01').errors.join(' | ');
+  assert.match(err({ type: 'scale', text: 'a', min: 1, max: 2026 }), /too wide/);
+  // 100 steps exactly is fine; the tiny common ranges obviously are.
+  assert.deepStrictEqual(normalizeQuiz({ questions: [{ type: 'scale', text: 'a', min: 0, max: 100 }] }, 's01').errors, []);
+  assert.deepStrictEqual(normalizeQuiz({ questions: [{ type: 'scale', text: 'a', min: 1, max: 5 }] }, 's01').errors, []);
+});
+
 test('normalizeQuiz: keeps the file quiet — only correct options flagged, no slide:null', () => {
   const r = normalizeQuiz(
     { questions: [{ type: 'choice', text: 'a', slide: null, options: [{ id: 'a', text: 'A', correct: false }, { id: 'b', text: 'B', correct: true }] }] },

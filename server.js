@@ -290,7 +290,12 @@ function ensureSlideHtml() {
   // just the deck — means a rebuild. When any question is placed, build a
   // derived deck with the quiz markers auto-inserted; otherwise build as-is.
   const needsDerive = quiz.questions.some((q) => q.slide);
-  const srcMtime = Math.max(fs.statSync(DECK_FILE).mtimeMs, fs.statSync(QUESTIONS_FILE).mtimeMs);
+  // A brand-new session (presik edit) may not have questions.json on disk yet;
+  // its mtime only matters when a question is placed on a slide, which can't
+  // happen with none. A missing file just means "no placement input" — statting
+  // it unconditionally would throw ENOENT and break /slides for a deck-only run.
+  const qMtime = fs.existsSync(QUESTIONS_FILE) ? fs.statSync(QUESTIONS_FILE).mtimeMs : 0;
+  const srcMtime = Math.max(fs.statSync(DECK_FILE).mtimeMs, qMtime);
   const stale = !fs.existsSync(DECK_HTML) || srcMtime > fs.statSync(DECK_HTML).mtimeMs;
   if (stale) {
     let buildSrc = DECK_FILE;
@@ -321,9 +326,17 @@ let qrSvg = '';
 // wreck the distribution and the archive. Not tamper-proof; it keeps an honest
 // room honest. Per-IP is meaningful because each phone on the LAN has its own
 // address; under --tunnel we key off the real client IP.
-const MAX_CLIENTS_PER_IP = 12;
-const RATE_BURST = 8; // answers per burst
-const RATE_REFILL_MS = 400; // one token back every 400ms (~2.5/s sustained)
+// On a plain LAN every phone has its own address, so a tight per-IP cap is a
+// real per-student guard against the "loop and POST 500 ids" attack. Behind the
+// tunnel that reasoning inverts: Cloudflare's edge — and usually a single campus
+// NAT behind it — puts the whole class on ONE source IP, so LAN-tight numbers
+// would lock every student past the 12th out of their own quiz and throttle the
+// rest to one shared bucket. Size the caps for a lecture hall there; the guard
+// is looser (as anything past the tunnel always is), but a trivial flood still
+// trips it.
+const MAX_CLIENTS_PER_IP = TRUST_PROXY ? 1000 : 12;
+const RATE_BURST = TRUST_PROXY ? 300 : 8; // answers per burst
+const RATE_REFILL_MS = TRUST_PROXY ? 50 : 400; // one token back this often (LAN ~2.5/s)
 const IDLE_IP_MS = 30 * 60 * 1000; // forget a source IP after this long with no answers
 const clientsByIp = new Map(); // ip -> Set(clientId)
 const rateByIp = new Map(); // ip -> { tokens, ts }
@@ -759,11 +772,13 @@ const server = http.createServer(async (req, res) => {
     const last = quiz.questions.length - 1;
     if (action === 'next' && state.index < last) (state.index++, (state.revealed = false));
     else if (action === 'prev' && state.index > -1) (state.index--, (state.revealed = false));
-    else if (action === 'goto' && to >= 0 && to <= last) (state.index = to, (state.revealed = false));
+    else if (action === 'goto' && Number.isInteger(to) && to >= 0 && to <= last) (state.index = to, (state.revealed = false));
     // reveal can carry the target question, so the slides send a single atomic
     // request instead of a goto+reveal pair that could arrive out of order.
     else if (action === 'reveal') {
-      if (typeof to === 'number' && to >= 0 && to <= last) state.index = to;
+      // Must be a real array index: a string or fraction would make cur() return
+      // undefined and blank the quiz (see the goto guard above).
+      if (Number.isInteger(to) && to >= 0 && to <= last) state.index = to;
       state.revealed = true;
     }
     else if (action === 'auto') state.autoReveal = !!body.autoReveal; // /host toggle
@@ -990,30 +1005,32 @@ server.on('error', (e) => {
   GROUP = await resolveGroup();
   startRun();
 
+  // Build the slides and convert the deck BEFORE we start listening. Both shell
+  // out synchronously (marp-cli; osascript/soffice for a pptx/key deck), and a
+  // conversion can take minutes — running them inside the listen callback would
+  // freeze the event loop of an already-listening server, hanging every request
+  // that arrived meanwhile. Doing them first only delays the (URL-less) socket,
+  // and keeps any "install LibreOffice / export a PDF" message up front.
+  if (deckType === 'marp' && MARP_AVAILABLE) {
+    try {
+      ensureSlideHtml();
+    } catch (e) {
+      console.error('\n  Slide build error (' + path.relative(CONTENT_DIR, DECK_FILE) + '): ' + e.message + '\n');
+    }
+  }
+  if (convertSrc) {
+    try {
+      const r = ensureDeckPdf(convertSrc, CACHE_PDF);
+      pdfServePath = r.path;
+      if (r.converter !== 'cache') console.log('  Converted ' + path.basename(convertSrc) + ' → PDF via ' + r.converter);
+    } catch (e) {
+      deckError = e.message;
+      console.error('\n  ' + e.message + '\n');
+    }
+  }
+
   server.listen(PORT, async () => {
     await setJoinUrl('http://' + localIp() + ':' + PORT + '/');
-
-    if (deckType === 'marp' && MARP_AVAILABLE) {
-      try {
-        ensureSlideHtml();
-      } catch (e) {
-        console.error('\n  Slide build error (' + path.relative(CONTENT_DIR, DECK_FILE) + '): ' + e.message + '\n');
-      }
-    }
-
-    // Convert a PowerPoint/Keynote deck to PDF under the hood (cached), using
-    // the source app's own renderer when available. Runs before the banner so
-    // any "install LibreOffice / export a PDF" message shows up front, not mid-class.
-    if (convertSrc) {
-      try {
-        const r = ensureDeckPdf(convertSrc, CACHE_PDF);
-        pdfServePath = r.path;
-        if (r.converter !== 'cache') console.log('  Converted ' + path.basename(convertSrc) + ' → PDF via ' + r.converter);
-      } catch (e) {
-        deckError = e.message;
-        console.error('\n  ' + e.message + '\n');
-      }
-    }
 
     if (OPEN_EDITOR) openBrowser('http://localhost:' + PORT + '/edit?key=' + encodeURIComponent(KEY));
 
@@ -1036,6 +1053,7 @@ server.on('error', (e) => {
     cf.stdout.on('data', scan);
     cf.stderr.on('data', scan);
     cf.on('error', () => {
+      done = true; // failed for good — don't also let the 15s "timed out" fallback fire a second banner
       console.log('  cloudflared not found — staying on the local network.');
       banner();
     });

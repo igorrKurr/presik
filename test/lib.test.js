@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert');
-const { validateAnswer, groupSlug, rankHostIps, bestHostIp, toSessionName, buildDeckSteps, splitMarpSlides, deriveMarpMarkdown, pickConverters, normalizeQuiz, validateConfigObject, mergeConfig, historyToPrune } = require('../lib');
+const { validateAnswer, groupSlug, sessionSlug, parseArgs, rankHostIps, bestHostIp, toSessionName, buildDeckSteps, splitMarpSlides, deriveMarpMarkdown, pickConverters, normalizeQuiz, validateConfigObject, mergeConfig, historyToPrune } = require('../lib');
 
 test('validateAnswer: choice accepts only real option ids', () => {
   const q = { type: 'choice', options: [{ id: 'a' }, { id: 'b' }] };
@@ -185,4 +185,29 @@ test('pickConverters: fidelity-first ordering, per format and tool availability'
   assert.deepStrictEqual(pickConverters('.pptx', {}), []);
   // already-PDF / unknown → nothing to convert
   assert.deepStrictEqual(pickConverters('.pdf', { soffice: true }), []);
+});
+
+test('sessionSlug: POSIX path → one filesystem-safe token', () => {
+  assert.strictEqual(sessionSlug('s01'), 's01');
+  assert.strictEqual(sessionSlug('web-dev/s01'), 'web-dev-s01');
+  assert.strictEqual(sessionSlug('a/b/c'), 'a-b-c');
+  assert.strictEqual(sessionSlug(''), 'session'); // never empty — it names files
+  assert.strictEqual(sessionSlug(null), 'session');
+});
+
+test('parseArgs: positionals, valued flags, and opt/has lookups', () => {
+  const a = parseArgs(['s01', '--dir', 'x/y', '--tunnel', 'extra'], ['dir', 'port']);
+  // "x/y" is --dir's value, so it isn't a positional; "s01" and "extra" are.
+  assert.deepStrictEqual(a.positional, ['s01', 'extra']);
+  assert.strictEqual(a.opt('dir', null), 'x/y');
+  assert.strictEqual(a.has('tunnel'), true);
+  assert.strictEqual(a.has('nope'), false);
+  assert.strictEqual(a.opt('port', 3000), 3000); // absent → default
+});
+
+test('parseArgs: a flag with no value reads as absent, not as the next flag', () => {
+  const a = parseArgs(['--key', '--tunnel'], ['key']);
+  assert.strictEqual(a.opt('key', null), null); // --tunnel isn't --key's value
+  assert.strictEqual(a.has('tunnel'), true);
+  assert.deepStrictEqual(a.positional, []);
 });

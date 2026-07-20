@@ -33,7 +33,7 @@ const readline = require('readline');
 const { spawn, execFileSync } = require('child_process');
 const QRCode = require('qrcode');
 const { openDb } = require('./db');
-const { groupSlug, bestHostIp, rankHostIps, validateAnswer, splitMarpSlides, deriveMarpMarkdown, normalizeQuiz, CONFIG_FILE } = require('./lib');
+const { groupSlug, sessionSlug, toSessionName, parseArgs, bestHostIp, rankHostIps, validateAnswer, splitMarpSlides, deriveMarpMarkdown, normalizeQuiz, CONFIG_FILE } = require('./lib');
 const { readAssetText } = require('./assets');
 const { ensureDeckPdf } = require('./convert');
 const { loadConfig } = require('./config');
@@ -45,21 +45,7 @@ const VERSION = require('./package.json').version;
 // ---------------------------------------------------------------- arguments
 const argv = process.argv.slice(2);
 const FLAGS_WITH_VALUE = new Set(['dir', 'port', 'key', 'qr', 'db', 'group', 'host']);
-const positional = [];
-for (let i = 0; i < argv.length; i++) {
-  const a = argv[i];
-  if (a.startsWith('--')) {
-    if (FLAGS_WITH_VALUE.has(a.slice(2))) i++; // skip the flag's value too, not just the flag
-    continue;
-  }
-  positional.push(a);
-}
-const opt = (name, dflt) => {
-  const i = argv.indexOf('--' + name);
-  const v = argv[i + 1];
-  return i >= 0 && v && !v.startsWith('--') ? v : dflt;
-};
-const has = (name) => argv.includes('--' + name);
+const { positional, opt, has } = parseArgs(argv, FLAGS_WITH_VALUE);
 
 // --dir is resolved first and is the one setting a config file may not touch:
 // it says where the content root is, and the content root is where sessions and
@@ -96,11 +82,6 @@ function findSessionDirs(root, depth = 4) {
     }
   })(root, 0);
   return out.sort();
-}
-
-function toSessionName(root, dir) {
-  const rel = path.relative(root, dir);
-  return (rel || '.').split(path.sep).join('/');
 }
 
 let sessionArg = positional[0];
@@ -256,8 +237,7 @@ const MARP_AVAILABLE = fs.existsSync(MARP_JS);
 // converted under the hood from PowerPoint/Keynote (deck.pptx / deck.key).
 const convertSrc = fs.existsSync(DECK_PDF) ? null : [DECK_PPTX, DECK_KEY].find((f) => fs.existsSync(f));
 const deckType = fs.existsSync(DECK_FILE) ? 'marp' : (fs.existsSync(DECK_PDF) || convertSrc ? 'pdf' : null);
-const deckExists = !!deckType;
-const CACHE_PDF = path.join(DATA_DIR, 'cache', name.replace(/\//g, '-') + '.pdf'); // converted decks land here
+const CACHE_PDF = path.join(DATA_DIR, 'cache', sessionSlug(name) + '.pdf'); // converted decks land here
 let pdfServePath = fs.existsSync(DECK_PDF) ? DECK_PDF : null; // resolved after conversion for convertibles
 let deckError = null; // conversion failure message, surfaced on /slides
 if (deckType === 'marp') {
@@ -340,19 +320,34 @@ let qrSvg = '';
 // stops the trivial "loop and POST 500 random ids" attack that would otherwise
 // wreck the distribution and the archive. Not tamper-proof; it keeps an honest
 // room honest. Per-IP is meaningful because each phone on the LAN has its own
-// address; under --tunnel we key off the real client IP (X-Forwarded-For).
+// address; under --tunnel we key off the real client IP.
 const MAX_CLIENTS_PER_IP = 12;
 const RATE_BURST = 8; // answers per burst
 const RATE_REFILL_MS = 400; // one token back every 400ms (~2.5/s sustained)
+const IDLE_IP_MS = 30 * 60 * 1000; // forget a source IP after this long with no answers
 const clientsByIp = new Map(); // ip -> Set(clientId)
 const rateByIp = new Map(); // ip -> { tokens, ts }
 
 function clientIp(req) {
   if (TRUST_PROXY) {
+    // Cloudflare sets CF-Connecting-IP at its edge, so it's the one client
+    // address a student can't forge. X-Forwarded-For is appended to, so its
+    // *leftmost* entry is whatever the client sent — worthless for a per-IP cap
+    // (a cheater would just rotate it). Prefer CF's header; only fall back to
+    // XFF's edge-added rightmost entry.
+    const cf = req.headers['cf-connecting-ip'];
+    if (cf) return String(cf).trim();
     const xff = req.headers['x-forwarded-for'];
-    if (xff) return String(xff).split(',')[0].trim();
+    if (xff) return String(xff).split(',').pop().trim();
   }
   return req.socket.remoteAddress || 'local';
+}
+// Drop per-IP bookkeeping for addresses that have gone quiet, so a long-lived
+// server (especially under --tunnel, where every source IP is distinct) doesn't
+// accumulate a map entry per address it ever saw. Cheap: runs on each answer.
+function forgetIdleIps() {
+  const cutoff = Date.now() - IDLE_IP_MS;
+  for (const [ip, b] of rateByIp) if (b.ts < cutoff) { rateByIp.delete(ip); clientsByIp.delete(ip); }
 }
 function rateOk(ip) {
   const now = Date.now();
@@ -598,17 +593,20 @@ const send = (res, code, type, body) => {
 const readBody = (req, limit = 8000) =>
   new Promise((resolve) => {
     let b = '';
+    // Destroying the request on an over-limit body means 'end' never fires, and
+    // 'close'/'error' can arrive instead of a clean 'end' on a dropped socket —
+    // so resolve on any terminal event. A settled Promise ignores later calls,
+    // so the handler always continues (with {}) instead of awaiting forever.
+    const done = () => {
+      try { resolve(JSON.parse(b || '{}')); } catch (_) { resolve({}); }
+    };
     req.on('data', (c) => {
       b += c;
-      if (b.length > limit) req.destroy();
+      if (b.length > limit) { resolve({}); req.destroy(); }
     });
-    req.on('end', () => {
-      try {
-        resolve(JSON.parse(b || '{}'));
-      } catch (_) {
-        resolve({});
-      }
-    });
+    req.on('end', done);
+    req.on('close', () => resolve({}));
+    req.on('error', () => resolve({}));
   });
 
 const server = http.createServer(async (req, res) => {
@@ -744,6 +742,7 @@ const server = http.createServer(async (req, res) => {
     const cid = String(clientId == null ? '' : clientId).slice(0, 64);
     if (!cid) return send(res, 422, 'application/json', '{"ok":false}');
     const ip = clientIp(req);
+    forgetIdleIps();
     if (!rateOk(ip) || !clientAllowed(ip, cid)) return send(res, 429, 'application/json', '{"ok":false}');
     if (!answers.has(qid)) answers.set(qid, new Map());
     answers.get(qid).set(cid, val);
@@ -888,7 +887,7 @@ function saveAndExit() {
     const dir = path.join(DATA_DIR, 'results');
     fs.mkdirSync(dir, { recursive: true });
     const slug = groupSlug(GROUP);
-    const label = name.replace(/\//g, '-');
+    const label = sessionSlug(name);
     const f = path.join(dir, label + (slug ? '-' + slug : '') + '-' + new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-') + '.json');
     fs.writeFileSync(f, JSON.stringify(exportData(), null, 2));
     console.log('\n  Results saved: ' + path.relative(process.cwd(), f));
@@ -941,13 +940,14 @@ function banner() {
     '  ' + (quiz.title || name) + '  ·  session: ' + name + (course ? '  ·  course: ' + course : '') +
       '  ·  questions: ' + quiz.questions.length + (GROUP ? '  ·  group: ' + GROUP : '')
   );
+  const base = joinUrl.replace(/\/$/, ''); // no trailing slash before the path we append
   console.log('\n  Students:  ' + joinUrl);
-  console.log('  Teacher:   ' + joinUrl.replace(/\/$/, '') + '/host?key=' + KEY + '  (control + live view — keep private)');
-  console.log('  Editor:    ' + joinUrl.replace(/\/$/, '') + '/edit?key=' + KEY + '  (write the questions — keep private)');
-  if (deckType === 'marp' && MARP_AVAILABLE) console.log('  Slides:    ' + joinUrl.replace(/\/$/, '') + '/slides?key=' + KEY + '  (without ?key= — view only, no control)');
-  else if (deckType === 'pdf') console.log('  Slides:    ' + joinUrl.replace(/\/$/, '') + '/slides?key=' + KEY + '  (PDF deck; without ?key= — view only)');
+  console.log('  Teacher:   ' + base + '/host?key=' + KEY + '  (control + live view — keep private)');
+  console.log('  Editor:    ' + base + '/edit?key=' + KEY + '  (write the questions — keep private)');
+  if (deckType === 'marp' && MARP_AVAILABLE) console.log('  Slides:    ' + base + '/slides?key=' + KEY + '  (without ?key= — view only, no control)');
+  else if (deckType === 'pdf') console.log('  Slides:    ' + base + '/slides?key=' + KEY + '  (PDF deck; without ?key= — view only)');
   else if (deckType === 'marp') console.log('  Slides:    (deck.marp.md found, but Marp isn\'t in this build — use a PDF deck, or install via npm)');
-  if (!deckType) console.log('  Projector: ' + joinUrl.replace(/\/$/, '') + '/present  (QR + live results — questions-only session)');
+  if (!deckType) console.log('  Projector: ' + base + '/present  (QR + live results — questions-only session)');
   if (!KEY_GIVEN)
     console.log('\n  Key:       ' + KEY + '  (random this run; anyone with it controls the quiz — pin your own with --key)');
   console.log('\n  DB:        ' + path.relative(process.cwd(), DB_FILE) + '  (for analysis — presik-report)');

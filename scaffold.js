@@ -12,6 +12,7 @@
 const fs = require('fs');
 const path = require('path');
 const { readAssetText } = require('./assets');
+const { parseArgs } = require('./lib');
 
 // bin/cli.js dispatches here with the leading "new" still in argv when run
 // as `presik new ...`; running this file directly (`node scaffold.js s02`)
@@ -19,22 +20,7 @@ const { readAssetText } = require('./assets');
 const rawArgv = process.argv.slice(2);
 const argv = rawArgv[0] === 'new' ? rawArgv.slice(1) : rawArgv;
 
-const FLAGS_WITH_VALUE = new Set(['dir', 'title']);
-const positional = [];
-for (let i = 0; i < argv.length; i++) {
-  const a = argv[i];
-  if (a.startsWith('--')) {
-    if (FLAGS_WITH_VALUE.has(a.slice(2))) i++;
-    continue;
-  }
-  positional.push(a);
-}
-const opt = (name, dflt) => {
-  const i = argv.indexOf('--' + name);
-  const v = argv[i + 1];
-  return i >= 0 && v && !v.startsWith('--') ? v : dflt;
-};
-const has = (name) => argv.includes('--' + name);
+const { positional, opt, has } = parseArgs(argv, ['dir', 'title']);
 
 const CONTENT_DIR = path.resolve(opt('dir', process.cwd()));
 const sessionArg = positional[0];

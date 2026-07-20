@@ -7,7 +7,7 @@
 // snapshotted first.
 const fs = require('fs');
 const path = require('path');
-const { normalizeQuiz, historyToPrune } = require('./lib');
+const { normalizeQuiz, historyToPrune, sessionSlug } = require('./lib');
 
 const HISTORY_MAX = 50; // snapshots kept per file, oldest pruned
 // The editor saves a second or so after you stop typing. Without coalescing,
@@ -59,8 +59,7 @@ function formatQuestions(doc) {
 }
 
 // ---------------------------------------------------------------- history
-const slug = (sessionName) => String(sessionName || 'session').replace(/\//g, '-') || 'session';
-const historyDir = (dataDir, sessionName) => path.join(dataDir, 'history', slug(sessionName));
+const historyDir = (dataDir, sessionName) => path.join(dataDir, 'history', sessionSlug(sessionName));
 // A snapshot is named "<file>-<stamp>.json". One predicate for that contract,
 // so listing, pruning, and the read guard can't disagree about what counts.
 const isSnap = (file, n) => n.startsWith(file + '-') && n.endsWith('.json');

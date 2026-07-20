@@ -14,14 +14,9 @@
 const path = require('path');
 const fs = require('fs');
 const { openDb } = require('./db');
+const { parseArgs } = require('./lib');
 
-const argv = process.argv.slice(2);
-const opt = (name, dflt) => {
-  const i = argv.indexOf('--' + name);
-  const v = argv[i + 1];
-  return i >= 0 && v && !v.startsWith('--') ? v : dflt;
-};
-const has = (name) => argv.includes('--' + name);
+const { opt, has } = parseArgs(process.argv.slice(2), ['dir', 'db', 'session', 'course', 'group']);
 
 const CONTENT_DIR = path.resolve(opt('dir', process.cwd()));
 const DB_FILE = path.resolve(opt('db', path.join(CONTENT_DIR, '.presik', 'data.db')));

@@ -10,6 +10,39 @@ function toSessionName(root, dir, sep) {
   return (rel || '.').split(sep).join('/');
 }
 
+// A session name (a POSIX path like "web-dev/s01") → one filesystem-safe token.
+// The results archive, the converted-PDF cache, the edit-history folder, and the
+// generated question ids all key off this — so they agree on a single spelling
+// instead of each re-inventing the "/ → -" rule.
+function sessionSlug(name) {
+  return String(name || 'session').replace(/\//g, '-') || 'session';
+}
+
+// Parse an argv already sliced past [node, script] into positionals plus `opt`
+// / `has` lookups. `flagsWithValue` names the flags that consume the following
+// token, so a value like the "s02" in `--dir s02` isn't mistaken for a
+// positional. One parser for every entrypoint (server, scaffold, report), so
+// they can't drift in how they read the command line.
+function parseArgs(argv, flagsWithValue) {
+  const valued = flagsWithValue instanceof Set ? flagsWithValue : new Set(flagsWithValue || []);
+  const positional = [];
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a.startsWith('--')) {
+      if (valued.has(a.slice(2))) i++; // skip the flag's value too, not just the flag
+      continue;
+    }
+    positional.push(a);
+  }
+  const opt = (name, dflt) => {
+    const i = argv.indexOf('--' + name);
+    const v = argv[i + 1];
+    return i >= 0 && v && !v.startsWith('--') ? v : dflt;
+  };
+  const has = (name) => argv.includes('--' + name);
+  return { positional, opt, has };
+}
+
 // Group/cohort → a filename-safe slug (used only for the results/*.json name).
 function groupSlug(g) {
   return g ? g.trim().replace(/[^\p{L}\p{N}_-]+/gu, '-').slice(0, 40) : null;
@@ -190,7 +223,7 @@ function normalizeQuiz(raw, sessionName) {
   // An id is a question's identity — answers are stored under it, in the live
   // map and in the DB. Omitted ids fall back to position, which is why the
   // editor writes them out explicitly the first time it saves (see editor.js).
-  const idBase = String(sessionName || 'session').replace(/\//g, '-');
+  const idBase = sessionSlug(sessionName);
   const seenIds = new Set();
 
   const questions = raw.questions.map((src, i) => {
@@ -313,4 +346,4 @@ function historyToPrune(names, max) {
   return sorted.slice(0, Math.max(0, sorted.length - max));
 }
 
-module.exports = { toSessionName, groupSlug, rankHostIps, bestHostIp, isPrivateV4, validateAnswer, buildDeckSteps, splitMarpSlides, deriveMarpMarkdown, pickConverters, normalizeQuiz, validateConfigObject, mergeConfig, historyToPrune, CONFIG_FILE, CONFIG_SPEC, QUESTION_TYPES, VIRTUAL_IFACE };
+module.exports = { toSessionName, sessionSlug, parseArgs, groupSlug, rankHostIps, bestHostIp, isPrivateV4, validateAnswer, buildDeckSteps, splitMarpSlides, deriveMarpMarkdown, pickConverters, normalizeQuiz, validateConfigObject, mergeConfig, historyToPrune, CONFIG_FILE, CONFIG_SPEC, QUESTION_TYPES, VIRTUAL_IFACE };

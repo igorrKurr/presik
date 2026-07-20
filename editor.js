@@ -61,6 +61,9 @@ function formatQuestions(doc) {
 // ---------------------------------------------------------------- history
 const slug = (sessionName) => String(sessionName || 'session').replace(/\//g, '-') || 'session';
 const historyDir = (dataDir, sessionName) => path.join(dataDir, 'history', slug(sessionName));
+// A snapshot is named "<file>-<stamp>.json". One predicate for that contract,
+// so listing, pruning, and the read guard can't disagree about what counts.
+const isSnap = (file, n) => n.startsWith(file + '-') && n.endsWith('.json');
 // Milliseconds, not seconds: a restore snapshots the current file and then
 // writes, and at one-second granularity those two can collide on the same name.
 // Every stamp is the same length, so lexical order is chronological order —
@@ -85,7 +88,7 @@ function listHistory(dataDir, sessionName, file) {
     return [];
   }
   return names
-    .filter((n) => n.startsWith(file + '-') && n.endsWith('.json'))
+    .filter((n) => isSnap(file, n))
     .sort()
     .reverse()
     .map((n) => {
@@ -101,7 +104,7 @@ function listHistory(dataDir, sessionName, file) {
 function readHistory(dataDir, sessionName, file, id) {
   // `id` arrives from the browser — keep it to a name this function generated,
   // so it can't walk out of the history folder.
-  if (!/^[\w.-]+$/.test(String(id)) || !String(id).startsWith(file + '-')) return null;
+  if (!/^[\w.-]+$/.test(String(id)) || !isSnap(file, String(id))) return null;
   try {
     return fs.readFileSync(path.join(historyDir(dataDir, sessionName), id), 'utf8');
   } catch (_) {
@@ -138,7 +141,7 @@ function snapshot(dataDir, sessionName, file, content, force) {
     }
   }
   for (const old of historyToPrune(
-    fs.readdirSync(dir).filter((n) => n.startsWith(file + '-') && n.endsWith('.json')),
+    fs.readdirSync(dir).filter((n) => isSnap(file, n)),
     HISTORY_MAX
   )) {
     try {

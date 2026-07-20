@@ -190,41 +190,50 @@ const DECK_PPTX = path.join(SESSION_DIR, 'deck.pptx');
 const DECK_KEY = path.join(SESSION_DIR, 'deck.key');
 const QR_FILE = cliPath('qr') || CONFIG.qr || path.join(SESSION_DIR, 'join-qr.svg');
 
-// `presik edit <session>` may point at a session that has no questions.json
-// yet — that's how you start one from scratch. The editor opens empty and its
-// first save creates the file (and the folder). Only that flow gets the pass;
-// a normal run still needs a real quiz, or there's nothing to show a class.
+// Load and validate questions.json up front, not in the middle of class. The
+// two runs differ in how forgiving they are:
+//   • a normal run needs a clean quiz — missing, unparseable, or invalid stops
+//     the launch, because there'd be nothing (or something broken) to run;
+//   • `presik edit` never dies for a questions.json reason. Whatever's wrong —
+//     no file yet, bad JSON, a duplicate id — the editor opens so you can fix
+//     it (it reads the file's real state itself, via /api/edit/state) or write
+//     the first one. Until then the server runs on an empty in-memory quiz.
+// Problems print to the terminal either way; only a normal run treats them as
+// fatal. `fail` is the single exit path, so the two modes can't drift.
 const QUESTIONS_EXISTS = fs.existsSync(QUESTIONS_FILE);
-if (!QUESTIONS_EXISTS && !OPEN_EDITOR) {
-  console.error('\n  Missing ' + path.relative(CONTENT_DIR, QUESTIONS_FILE) + '\n');
-  console.error('  Every session is a directory with questions.json (and, optionally, deck.marp.md).');
-  console.error('  Example — templates/questions.example.json, or start one in the browser with `presik edit`.\n');
+const fail = (msg) => {
+  if (OPEN_EDITOR) return void console.error('  Note: ' + msg + ' — opening the editor to fix it.');
+  console.error('\n  ' + msg + '\n');
   process.exit(1);
-}
+};
 
-let quiz;
+let quiz = null;
 if (!QUESTIONS_EXISTS) {
-  quiz = { title: name, questions: [] }; // fresh, empty — the editor fills it in
+  fail(
+    'Missing ' + path.relative(CONTENT_DIR, QUESTIONS_FILE) + '\n\n' +
+      '  Every session is a directory with questions.json (and, optionally, deck.marp.md).\n' +
+      '  Example — templates/questions.example.json, or start one in the browser with `presik edit`.'
+  );
 } else {
+  let raw = null;
   try {
-    quiz = JSON.parse(fs.readFileSync(QUESTIONS_FILE, 'utf8'));
+    raw = JSON.parse(fs.readFileSync(QUESTIONS_FILE, 'utf8'));
   } catch (e) {
-    console.error('\n  Error in JSON (' + QUESTIONS_FILE + '):\n  ' + e.message + '\n');
-    process.exit(1);
+    fail('Error in JSON (' + QUESTIONS_FILE + '):\n  ' + e.message);
   }
-  // Validate the schema up front, not in the middle of class. This is the same
-  // validator /edit runs before accepting a save (normalizeQuiz, in lib.js) — so
-  // the editor can't write a file the server then refuses to start on.
-  const { quiz: normalized, errors, warnings } = normalizeQuiz(quiz, name);
-  if (errors.length) {
-    console.error('');
-    errors.forEach((e) => console.error('  ' + e));
-    console.error('');
-    process.exit(1);
+  if (raw != null) {
+    // Same validator /edit runs before accepting a save (normalizeQuiz, in
+    // lib.js) — so the editor can't write a file the server then refuses to
+    // start on, and startup can't reject one the editor would happily open.
+    const { quiz: normalized, errors, warnings } = normalizeQuiz(raw, name);
+    warnings.forEach((w) => console.error('  Note: ' + w));
+    if (errors.length) fail(errors.join('\n  '));
+    else quiz = normalized;
   }
-  warnings.forEach((w) => console.error('  Note: ' + w));
-  quiz = normalized;
 }
+// Editor run with nothing usable yet: start empty. The first save creates (or
+// repairs) the file; /api/edit/state, read fresh, still shows what's on disk.
+if (!quiz) quiz = { title: name, questions: [] };
 
 // ---------------------------------------------------------------- slides (Marp)
 // Slides are the source of truth in deck.marp.md; deck.marp.html is a build
@@ -808,7 +817,6 @@ const server = http.createServer(async (req, res) => {
         version: VERSION,
         session: name,
         course,
-        title: quiz.title || name,
         deck: { type: deckType, slides: deckSlideCount() },
         doc: r.doc || null,
         rev: r.rev || 0,
@@ -903,9 +911,15 @@ function localIp() {
 // on this machine by definition. Best-effort — a headless box just prints the
 // URL like always.
 function openBrowser(url) {
-  const cmd = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'start' : 'xdg-open';
+  // On Windows the opener is cmd's `start`, whose *first* quoted argument is the
+  // window title — so the URL has to go second, behind an empty title (`start ""
+  // <url>`), or a link with a `?key=` query opens a blank titled window instead.
+  const [cmd, args] =
+    process.platform === 'darwin' ? ['open', [url]] :
+    process.platform === 'win32' ? ['cmd', ['/c', 'start', '', url]] :
+    ['xdg-open', [url]];
   try {
-    spawn(cmd, [url], { stdio: 'ignore', detached: true, shell: process.platform === 'win32' }).unref();
+    spawn(cmd, args, { stdio: 'ignore', detached: true }).unref();
   } catch (_) {}
 }
 

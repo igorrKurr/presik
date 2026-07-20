@@ -31,9 +31,16 @@
     store.doc.questions = store.doc.questions.map(canon);
     store.touch(redraw);
   }
+  // A keystroke changes one question — canon just that one rather than rebuilding
+  // every question object on the array, so typing stays cheap in a long quiz.
+  // Structural edits (add/delete/reorder/type) use commit() and re-canon all.
+  function commitAt(i, redraw) {
+    store.doc.questions[i] = canon(store.doc.questions[i]);
+    store.touch(redraw);
+  }
   const set = (i, k, v) => {
     store.doc.questions[i][k] = v;
-    commit(false); // a keystroke must not re-render: it would eat the cursor
+    commitAt(i, false); // a keystroke must not re-render: it would eat the cursor
   };
 
   // An id is identity — answers are stored under it, live and in the archive. A
@@ -213,7 +220,7 @@
             placeholder: 'Option ' + (j + 1),
             onInput: (e) => {
               store.doc.questions[i].options[j].text = e.target.value;
-              commit(false);
+              commitAt(i, false);
             },
           }),
           el('button', { class: 'iconbtn' + (o.correct ? ' ok' : ''), text: '✓', title: 'Mark as correct', onClick: () => toggleCorrect(i, j) }),

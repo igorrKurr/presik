@@ -54,6 +54,17 @@ test('readQuestions: a missing file is a fresh start, not an error', () => {
   assert.strictEqual(r.rev, 0);
 });
 
+test('readQuestions: an existing-but-empty file still hands back a doc to edit', () => {
+  // `presik edit` must be able to open a file the server would refuse to run
+  // (empty questions), so the editor can repair it — errors ride along, the doc
+  // does too. (The server's own lenient startup mirrors this.)
+  const s = session({ title: 'T', questions: [] });
+  const r = readQuestions(s.file, s.name);
+  assert.ok(r.ok && r.doc, 'a doc comes back even when invalid');
+  assert.deepStrictEqual(r.doc.questions, []);
+  assert.match(r.errors.join(), /questions/);
+});
+
 test('saveQuestions: the first save creates the file (and its folder)', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'presik-editor-'));
   const file = path.join(dir, 'brand', 'new', 'questions.json'); // folder does not exist yet

@@ -194,8 +194,11 @@ You can write `questions.json` by hand (the schema above is the whole contract),
 
 ```bash
 presik edit s01        # boots the server and opens the editor in your browser
+presik edit s09        # a session with no questions.json yet? the editor opens blank
 presik s01             # ...or just run normally — the banner prints the Editor URL
 ```
+
+You can point `presik edit` at a session that doesn't have a `questions.json` yet (or a folder that doesn't exist at all): the editor opens on a blank quiz, and your **first save creates the file** — and its folder. It's the from-scratch path that doesn't need a template. (A plain `presik <session>` still needs a real `questions.json` to run — there'd be nothing to show a class.)
 
 The banner shows it alongside the others:
 

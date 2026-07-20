@@ -243,9 +243,10 @@ Prefer not to hand-edit JSON? There's a live, Google-Forms-style editor for `que
 
 ```bash
 presik edit s01        # opens the editor in your browser
+presik edit s09        # no questions.json there yet? it opens blank — first save creates it
 ```
 
-One card per question, edited in place — the card *is* the preview, so the correct-answer green and the tap targets are what the room will see. Choice / text / scale is a one-tap switch; drag to reorder; changes **autosave** to `questions.json` (kept in the same clean, hand-editable format). Every save is snapshotted, so there's a **version history** you can restore from, and `Cmd/Ctrl+Z` undoes. It's the same file either way — edit it in the browser one day and in your editor the next. You can even open it **mid-class** (the banner prints an `Editor:` URL) to fix a typo you spot on the projector; a running session picks the change up live.
+Starting a session from scratch, `presik edit` doesn't even need a file (or the folder) to exist first — it opens on a blank quiz and writes `questions.json` on your first save. One card per question, edited in place — the card *is* the preview, so the correct-answer green and the tap targets are what the room will see. Choice / text / scale is a one-tap switch; drag to reorder; changes **autosave** to `questions.json` (kept in the same clean, hand-editable format). Every save is snapshotted, so there's a **version history** you can restore from, and `Cmd/Ctrl+Z` undoes. It's the same file either way — edit it in the browser one day and in your editor the next. You can even open it **mid-class** (the banner prints an `Editor:` URL) to fix a typo you spot on the projector; a running session picks the change up live.
 
 Full details — [`CONVENTIONS.md`](CONVENTIONS.md#the-question-editor--edit).
 

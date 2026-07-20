@@ -153,6 +153,7 @@ function snapshot(dataDir, sessionName, file, content, force) {
 // leaves either the old file or the new one — never half a questions.json that
 // won't parse at the start of class.
 function writeAtomic(file, text) {
+  fs.mkdirSync(path.dirname(file), { recursive: true }); // a brand-new session folder may not exist yet
   const tmp = path.join(path.dirname(file), '.' + path.basename(file) + '.' + process.pid + '.tmp');
   fs.writeFileSync(tmp, text);
   fs.renameSync(tmp, file);
@@ -173,6 +174,9 @@ function readQuestions(file, sessionName) {
   try {
     text = fs.readFileSync(file, 'utf8');
   } catch (e) {
+    // No file yet isn't an error here — you opened the editor to write the
+    // first one. Hand back an empty doc; the first save creates the file.
+    if (e.code === 'ENOENT') return { ok: true, doc: { title: null, questions: [] }, rev: 0, isNew: true, errors: [], warnings: [] };
     return { ok: false, errors: ['could not read questions.json — ' + e.message] };
   }
   let raw;

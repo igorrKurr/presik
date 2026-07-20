@@ -190,24 +190,31 @@ const DECK_PPTX = path.join(SESSION_DIR, 'deck.pptx');
 const DECK_KEY = path.join(SESSION_DIR, 'deck.key');
 const QR_FILE = cliPath('qr') || CONFIG.qr || path.join(SESSION_DIR, 'join-qr.svg');
 
-if (!fs.existsSync(QUESTIONS_FILE)) {
+// `presik edit <session>` may point at a session that has no questions.json
+// yet — that's how you start one from scratch. The editor opens empty and its
+// first save creates the file (and the folder). Only that flow gets the pass;
+// a normal run still needs a real quiz, or there's nothing to show a class.
+const QUESTIONS_EXISTS = fs.existsSync(QUESTIONS_FILE);
+if (!QUESTIONS_EXISTS && !OPEN_EDITOR) {
   console.error('\n  Missing ' + path.relative(CONTENT_DIR, QUESTIONS_FILE) + '\n');
   console.error('  Every session is a directory with questions.json (and, optionally, deck.marp.md).');
-  console.error('  Example — templates/questions.example.json.\n');
+  console.error('  Example — templates/questions.example.json, or start one in the browser with `presik edit`.\n');
   process.exit(1);
 }
 
 let quiz;
-try {
-  quiz = JSON.parse(fs.readFileSync(QUESTIONS_FILE, 'utf8'));
-} catch (e) {
-  console.error('\n  Error in JSON (' + QUESTIONS_FILE + '):\n  ' + e.message + '\n');
-  process.exit(1);
-}
-// Validate the schema up front, not in the middle of class. This is the same
-// validator /edit runs before accepting a save (normalizeQuiz, in lib.js) — so
-// the editor can't write a file the server then refuses to start on.
-{
+if (!QUESTIONS_EXISTS) {
+  quiz = { title: name, questions: [] }; // fresh, empty — the editor fills it in
+} else {
+  try {
+    quiz = JSON.parse(fs.readFileSync(QUESTIONS_FILE, 'utf8'));
+  } catch (e) {
+    console.error('\n  Error in JSON (' + QUESTIONS_FILE + '):\n  ' + e.message + '\n');
+    process.exit(1);
+  }
+  // Validate the schema up front, not in the middle of class. This is the same
+  // validator /edit runs before accepting a save (normalizeQuiz, in lib.js) — so
+  // the editor can't write a file the server then refuses to start on.
   const { quiz: normalized, errors, warnings } = normalizeQuiz(quiz, name);
   if (errors.length) {
     console.error('');
@@ -805,6 +812,7 @@ const server = http.createServer(async (req, res) => {
         deck: { type: deckType, slides: deckSlideCount() },
         doc: r.doc || null,
         rev: r.rev || 0,
+        isNew: !!r.isNew, // no questions.json on disk yet — the first save creates it
         errors: r.errors || [],
         warnings: r.warnings || [],
       });

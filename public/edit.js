@@ -298,7 +298,9 @@
       modules.forEach((m) => tabs.append(el('button', { 'data-id': m.id, text: m.label, onClick: () => show(m) })));
     }
     if (modules.length) show(modules[0]);
-    status('All changes saved');
+    // A fresh session has no questions.json yet — the file appears on the first
+    // save, so don't claim it's already saved.
+    status(st.isNew ? 'New session — add a question to create questions.json' : 'All changes saved');
   }
 
   document.addEventListener('DOMContentLoaded', boot);

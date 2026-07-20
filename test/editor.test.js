@@ -46,6 +46,28 @@ test('saveQuestions: writes the id out, and keeps keys it does not own', () => {
   assert.deepStrictEqual(onDisk(s)._readme, ['keep me']);
 });
 
+test('readQuestions: a missing file is a fresh start, not an error', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'presik-editor-'));
+  const r = readQuestions(path.join(dir, 'nope', 'questions.json'), 's01');
+  assert.ok(r.ok && r.isNew);
+  assert.deepStrictEqual(r.doc.questions, []);
+  assert.strictEqual(r.rev, 0);
+});
+
+test('saveQuestions: the first save creates the file (and its folder)', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'presik-editor-'));
+  const file = path.join(dir, 'brand', 'new', 'questions.json'); // folder does not exist yet
+  const r = saveQuestions({
+    file,
+    dataDir: path.join(dir, '.presik'),
+    sessionName: 's01',
+    doc: { title: 'T', questions: [{ type: 'text', text: 'one' }] },
+    rev: 0,
+  });
+  assert.ok(r.ok, JSON.stringify(r.errors));
+  assert.strictEqual(JSON.parse(fs.readFileSync(file, 'utf8')).questions[0].id, 's01-q1');
+});
+
 test('saveQuestions: a broken quiz is refused, and the file is left alone', () => {
   const s = session({ title: 'T', questions: [{ id: 'a', type: 'text', text: 'one' }] });
   const before = fs.readFileSync(s.file, 'utf8');

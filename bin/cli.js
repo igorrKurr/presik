@@ -8,4 +8,9 @@ require('../sqlite-guard').ensureSqlite();
 const cmd = process.argv[2];
 if (cmd === 'new') require('../scaffold.js');
 else if (cmd === 'report') { process.argv.splice(2, 1); require('../report.js'); } // drop "report", report.js parses the rest
+// `presik edit <session>` is the ordinary server with the editor opened for you
+// — one code path, so what you edit is never a different app from the one that
+// runs the class. Swap the subcommand for a flag so server.js's parser sees a
+// flag rather than a stray positional it would read as a session name.
+else if (cmd === 'edit') { process.argv.splice(2, 1, '--edit'); require('../server.js'); }
 else require('../server.js');

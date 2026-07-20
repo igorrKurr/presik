@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert');
-const { validateAnswer, groupSlug, rankHostIps, bestHostIp, toSessionName, buildDeckSteps, splitMarpSlides, deriveMarpMarkdown, pickConverters } = require('../lib');
+const { validateAnswer, groupSlug, rankHostIps, bestHostIp, toSessionName, buildDeckSteps, splitMarpSlides, deriveMarpMarkdown, pickConverters, normalizeQuiz, validateConfigObject, mergeConfig, historyToPrune } = require('../lib');
 
 test('validateAnswer: choice accepts only real option ids', () => {
   const q = { type: 'choice', options: [{ id: 'a' }, { id: 'b' }] };
@@ -100,6 +100,79 @@ test('deriveMarpMarkdown: inserts question+reveal after the placed slide', () =>
 test('deriveMarpMarkdown: no placed questions → unchanged', () => {
   const md = '---\nmarp: true\n---\n\n# One';
   assert.strictEqual(deriveMarpMarkdown(md, [{ id: 'q1' }]), md);
+});
+
+test('normalizeQuiz: fills in the ids and defaults the schema promises', () => {
+  const r = normalizeQuiz(
+    { title: 't', questions: [{ type: 'choice', text: 'q', options: [{ id: 'a', text: 'A' }] }, { type: 'scale', text: 's' }] },
+    'web-dev/s01'
+  );
+  assert.deepStrictEqual(r.errors, []);
+  assert.strictEqual(r.quiz.questions[0].id, 'web-dev-s01-q1'); // session path → id prefix
+  assert.strictEqual(r.quiz.questions[1].min, 1);
+  assert.strictEqual(r.quiz.questions[1].max, 5);
+});
+
+test('normalizeQuiz: errors only on what would actually break a class', () => {
+  const err = (q) => normalizeQuiz({ questions: [].concat(q) }, 's01').errors.join(' | ');
+  assert.match(err([{ id: 'x', type: 'text', text: 'a' }, { id: 'x', type: 'text', text: 'b' }]), /duplicate id/);
+  assert.match(err({ type: 'choice', text: 'a' }), /no options/);
+  assert.match(err({ type: 'poll', text: 'a' }), /unknown type/);
+  assert.match(err({ type: 'text', text: 'a', slide: 0 }), /positive integer/);
+  assert.match(err({ type: 'scale', text: 'a', min: 5, max: 2 }), /below/);
+  assert.match(normalizeQuiz({ questions: [] }, 's01').errors.join(), /no "questions" array/);
+});
+
+test('normalizeQuiz: a half-typed question warns, but still saves', () => {
+  // The editor saves as you type — an empty question for a few seconds is
+  // normal and must not fail the write.
+  const r = normalizeQuiz({ questions: [{ type: 'text', text: '   ' }] }, 's01');
+  assert.deepStrictEqual(r.errors, []);
+  assert.match(r.warnings.join(), /no question text/);
+});
+
+test('normalizeQuiz: a 0-based scale survives ("0" is a bound, not "unset")', () => {
+  const r = normalizeQuiz({ questions: [{ type: 'scale', text: 'a', min: 0, max: 10 }] }, 's01');
+  assert.strictEqual(r.quiz.questions[0].min, 0);
+});
+
+test('normalizeQuiz: keeps the file quiet — only correct options flagged, no slide:null', () => {
+  const r = normalizeQuiz(
+    { questions: [{ type: 'choice', text: 'a', slide: null, options: [{ id: 'a', text: 'A', correct: false }, { id: 'b', text: 'B', correct: true }] }] },
+    's01'
+  );
+  assert.ok(!('correct' in r.quiz.questions[0].options[0]));
+  assert.strictEqual(r.quiz.questions[0].options[1].correct, true);
+  assert.ok(!('slide' in r.quiz.questions[0]));
+});
+
+test('normalizeQuiz: top-level keys it does not know about survive (e.g. _readme)', () => {
+  const r = normalizeQuiz({ _readme: ['x'], title: 't', questions: [{ type: 'text', text: 'a' }] }, 's01');
+  assert.deepStrictEqual(r.quiz._readme, ['x']);
+});
+
+test('validateConfigObject: types, unknown keys, and the CLI-only ones', () => {
+  assert.deepStrictEqual(validateConfigObject({ port: 8080, key: 'w', tunnel: true, qr: 'a.svg' }, 'f'), []);
+  assert.deepStrictEqual(validateConfigObject({ group: null }, 'f'), []); // null reads as "not set"
+  assert.match(validateConfigObject({ port: '8080' }, 'f').join(), /whole number/);
+  assert.match(validateConfigObject({ port: 99999 }, 'f').join(), /between 1 and 65535/);
+  assert.match(validateConfigObject({ tunnel: 'yes' }, 'f').join(), /true or false/);
+  assert.match(validateConfigObject({ nope: 1 }, 'f').join(), /unknown setting/);
+  assert.match(validateConfigObject({ dir: '/x' }, 'f').join(), /command line/); // would be circular
+  assert.match(validateConfigObject([], 'f').join(), /JSON object/);
+});
+
+test('mergeConfig: later layers win key-by-key, null never overrides', () => {
+  assert.deepStrictEqual(mergeConfig([{ port: 1, key: 'a' }, { port: 2 }]), { port: 2, key: 'a' });
+  assert.deepStrictEqual(mergeConfig([{ key: 'a' }, { key: null }]), { key: 'a' });
+  assert.deepStrictEqual(mergeConfig([]), {});
+});
+
+test('historyToPrune: drops the oldest past the cap, keeps order chronological', () => {
+  const n = ['questions-2026-01-01T00-00-01-000.json', 'questions-2026-01-01T00-00-02-000.json', 'questions-2026-01-01T00-00-03-000.json'];
+  assert.deepStrictEqual(historyToPrune(n, 2), [n[0]]);
+  assert.deepStrictEqual(historyToPrune(n, 5), []);
+  assert.deepStrictEqual(historyToPrune([], 5), []);
 });
 
 test('pickConverters: fidelity-first ordering, per format and tool availability', () => {

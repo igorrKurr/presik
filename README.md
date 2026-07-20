@@ -237,6 +237,28 @@ It generates both files from templates — the example questions already carry `
 
 The full `questions.json` schema (question types `choice` / `text` / `scale`), naming rules, and every flag — [`CONVENTIONS.md`](CONVENTIONS.md).
 
+### Writing questions in the browser — `presik edit`
+
+Prefer not to hand-edit JSON? There's a live, Google-Forms-style editor for `questions.json`:
+
+```bash
+presik edit s01        # opens the editor in your browser
+```
+
+One card per question, edited in place — the card *is* the preview, so the correct-answer green and the tap targets are what the room will see. Choice / text / scale is a one-tap switch; drag to reorder; changes **autosave** to `questions.json` (kept in the same clean, hand-editable format). Every save is snapshotted, so there's a **version history** you can restore from, and `Cmd/Ctrl+Z` undoes. It's the same file either way — edit it in the browser one day and in your editor the next. You can even open it **mid-class** (the banner prints an `Editor:` URL) to fix a typo you spot on the projector; a running session picks the change up live.
+
+Full details — [`CONVENTIONS.md`](CONVENTIONS.md#the-question-editor--edit).
+
+### Per-project settings — `presik.config.json`
+
+Tired of retyping the same flags? Drop a `presik.config.json` at your content root:
+
+```json
+{ "port": 8080, "key": "web-dev-2026", "group": "3-A" }
+```
+
+The keys are just the flag names; a flag on the command line still wins, and a session folder can carry its own file to override the root. Details and precedence — [`CONVENTIONS.md`](CONVENTIONS.md#settings-file--presikconfigjson-optional).
+
 ### The `hint` field — the thing that makes this worth it
 
 `hint` is visible **only to you**, on `/host`, under the distribution:

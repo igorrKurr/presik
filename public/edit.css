@@ -1,0 +1,275 @@
+/* The editor's look is deliberately the same as /host — same palette, same
+   panels — so the thing you write questions in and the thing you run class from
+   read as one app. Palette mirrors public/host.html. */
+:root {
+  --bg: #10161f;
+  --panel: #1b2634;
+  --panel2: #223041;
+  --txt: #f1f5f9;
+  --muted: #94a3b8;
+  --cyan: #38bdf8;
+  --green: #4ade80;
+  --red: #f87171;
+  --amber: #f5a524;
+  --bar: #0b1118;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--txt);
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  font-size: 15px;
+}
+button, input, select, textarea { font: inherit; color: inherit; }
+
+/* ---------------------------------------------------------------- topbar */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 10px 20px;
+  background: var(--bar);
+  border-bottom: 1px solid var(--panel2);
+}
+.ident { flex: 1; min-width: 0; }
+.crumb { font-size: 12px; color: var(--muted); padding-left: 7px; }
+.title-input {
+  width: 100%;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  padding: 3px 6px;
+  font-size: 20px;
+  font-weight: 600;
+}
+.title-input:hover { border-color: var(--panel2); }
+.title-input:focus { outline: none; background: var(--panel); border-color: var(--cyan); }
+.tools { display: flex; align-items: center; gap: 8px; flex: none; }
+.save { font-size: 13px; color: var(--muted); min-width: 118px; text-align: right; }
+.save.err { color: var(--red); }
+.ghost {
+  background: var(--panel);
+  border: 1px solid var(--panel2);
+  border-radius: 7px;
+  padding: 7px 13px;
+  font-size: 13px;
+  cursor: pointer;
+  text-decoration: none;
+  color: var(--txt);
+  white-space: nowrap;
+}
+.ghost:hover { border-color: var(--cyan); color: var(--cyan); }
+
+/* ---------------------------------------------------------------- tabs */
+.tabs { display: flex; gap: 4px; padding: 0 20px; background: var(--bar); border-bottom: 1px solid var(--panel2); }
+.tabs button {
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  padding: 10px 14px;
+  font-size: 14px;
+  cursor: pointer;
+}
+.tabs button.on { color: var(--cyan); border-bottom-color: var(--cyan); }
+
+/* ---------------------------------------------------------------- shell */
+main { max-width: 780px; margin: 0 auto; padding: 24px 20px 140px; }
+.loading { color: var(--muted); text-align: center; padding: 60px 0; }
+.banner {
+  max-width: 780px;
+  margin: 16px auto 0;
+  padding: 12px 16px;
+  border-radius: 8px;
+  background: var(--panel);
+  border: 1px solid var(--red);
+  color: var(--red);
+  font-size: 14px;
+  line-height: 1.5;
+}
+.banner button { margin-left: 10px; }
+
+/* ---------------------------------------------------------------- cards */
+.card {
+  position: relative;
+  background: var(--panel);
+  border: 1px solid var(--panel2);
+  border-radius: 10px;
+  margin-bottom: 12px;
+  overflow: hidden;
+}
+/* The accent rail marks the open card — the one your keystrokes go to. */
+.card::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: transparent; }
+.card.open { border-color: #2c3e54; }
+.card.open::before { background: var(--cyan); }
+.card.drag { opacity: .4; }
+.card-head { display: flex; align-items: center; gap: 10px; padding: 12px 14px; cursor: pointer; }
+.card.open .card-head { padding-bottom: 4px; }
+.grip {
+  cursor: grab;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1;
+  padding: 4px 2px;
+  letter-spacing: -2px;
+  flex: none;
+}
+.grip:active { cursor: grabbing; }
+.qnum { color: var(--muted); font-size: 13px; min-width: 18px; flex: none; font-variant-numeric: tabular-nums; }
+.sum { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sum .untitled { color: var(--muted); font-style: italic; }
+.sub { color: var(--muted); font-size: 12px; margin-top: 2px; white-space: nowrap; }
+.badge {
+  flex: none;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--muted);
+  background: var(--panel2);
+  border-radius: 5px;
+  padding: 3px 7px;
+}
+.warn-dot { color: var(--amber); flex: none; font-size: 12px; }
+
+.card-body { padding: 4px 14px 14px 30px; }
+.field { display: block; width: 100%; background: transparent; border: 1px solid transparent; border-radius: 7px; padding: 7px 8px; }
+.field:hover { border-color: var(--panel2); }
+.field:focus { outline: none; background: var(--bg); border-color: var(--cyan); }
+.field::placeholder { color: var(--muted); }
+.q-text { font-size: 18px; }
+.q-note { font-size: 14px; color: var(--muted); }
+textarea.field { resize: vertical; min-height: 38px; line-height: 1.45; font-family: inherit; }
+
+.row { display: flex; align-items: center; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
+.lbl { color: var(--muted); font-size: 13px; }
+
+/* segmented type switch */
+.seg { display: inline-flex; background: var(--bg); border: 1px solid var(--panel2); border-radius: 8px; padding: 2px; }
+.seg button { background: none; border: 0; border-radius: 6px; padding: 6px 12px; font-size: 13px; color: var(--muted); cursor: pointer; }
+.seg button.on { background: var(--panel2); color: var(--txt); }
+
+/* ---------------------------------------------------------------- options */
+/* An option row reads like the student's phone: the circle on the left is what
+   they'll tap. Marking it correct paints the row green — the same green /host
+   uses for the correct bar, so the colour means one thing across the app. */
+.opts { margin-top: 12px; }
+.opt { display: flex; align-items: center; gap: 9px; padding: 2px 0; }
+.dot { width: 15px; height: 15px; border: 2px solid var(--muted); border-radius: 50%; flex: none; }
+.opt.ok .dot { border-color: var(--green); background: radial-gradient(var(--green) 45%, transparent 47%); }
+.opt.ok .field { color: var(--green); }
+.opt .field { flex: 1; }
+.iconbtn {
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 5px 8px;
+  font-size: 13px;
+  line-height: 1;
+  flex: none;
+}
+.iconbtn:hover { border-color: var(--panel2); color: var(--txt); }
+.iconbtn.ok { color: var(--green); }
+.iconbtn:disabled { opacity: .3; cursor: default; }
+.iconbtn.danger:hover { color: var(--red); border-color: var(--red); }
+.addopt { background: none; border: 0; color: var(--cyan); cursor: pointer; font-size: 13px; padding: 8px 8px 2px 24px; }
+.hintline { color: var(--muted); font-size: 12px; padding: 6px 0 0 24px; }
+
+/* ---------------------------------------------------------------- scale/text preview */
+.scale-prev { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+.scale-prev span {
+  border: 1px solid var(--panel2);
+  border-radius: 7px;
+  padding: 6px 12px;
+  color: var(--muted);
+  font-size: 13px;
+  background: var(--bg);
+}
+.text-prev {
+  margin-top: 10px;
+  border: 1px dashed var(--panel2);
+  border-radius: 7px;
+  padding: 11px 12px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.num { width: 68px; background: var(--bg); border: 1px solid var(--panel2); border-radius: 7px; padding: 6px 8px; }
+.num:focus { outline: none; border-color: var(--cyan); }
+
+/* ---------------------------------------------------------------- extras */
+.extras { margin-top: 14px; border-top: 1px solid var(--panel2); padding-top: 12px; }
+.extra-lbl { display: block; color: var(--muted); font-size: 12px; margin: 8px 0 2px 8px; }
+/* The teacher note is amber wherever it appears — on /host and here. */
+.hint-field { border-color: rgba(245, 165, 36, .35); color: var(--amber); }
+.hint-field:hover { border-color: var(--amber); }
+
+.card-foot { display: flex; align-items: center; gap: 8px; margin-top: 12px; border-top: 1px solid var(--panel2); padding-top: 10px; }
+.card-foot .spacer { flex: 1; }
+.slidepick { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 13px; }
+.slidepick .num { width: 62px; }
+
+.add {
+  width: 100%;
+  background: var(--panel);
+  border: 1px dashed var(--panel2);
+  border-radius: 10px;
+  padding: 14px;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 14px;
+}
+.add:hover { border-color: var(--cyan); color: var(--cyan); }
+.empty { text-align: center; color: var(--muted); padding: 30px 0 18px; line-height: 1.6; }
+
+/* ---------------------------------------------------------------- history */
+.scrim { position: fixed; inset: 0; background: rgba(0, 0, 0, .5); z-index: 30; }
+.drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 380px;
+  max-width: 92vw;
+  z-index: 31;
+  background: var(--bar);
+  border-left: 1px solid var(--panel2);
+  padding: 18px;
+  overflow-y: auto;
+}
+.drawer-head { display: flex; justify-content: space-between; align-items: center; }
+.drawer-note { color: var(--muted); font-size: 12px; line-height: 1.5; }
+.hlist { margin-top: 10px; }
+.hitem { border: 1px solid var(--panel2); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; background: var(--panel); }
+.hitem .when { font-size: 14px; }
+.hitem .meta { color: var(--muted); font-size: 12px; margin-top: 3px; }
+.hitem .acts { margin-top: 8px; display: flex; gap: 6px; }
+.hempty { color: var(--muted); font-size: 13px; padding: 14px 2px; line-height: 1.6; }
+
+/* ---------------------------------------------------------------- toast */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 26px;
+  transform: translateX(-50%);
+  z-index: 40;
+  background: var(--panel2);
+  border: 1px solid #33465e;
+  border-radius: 9px;
+  padding: 11px 15px;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  box-shadow: 0 8px 26px rgba(0, 0, 0, .45);
+}
+.toast button { background: none; border: 0; color: var(--cyan); cursor: pointer; font-weight: 600; }
+
+@media (max-width: 620px) {
+  .tools .ghost { padding: 7px 9px; }
+  .card-body { padding-left: 14px; }
+}

@@ -33,9 +33,11 @@ const readline = require('readline');
 const { spawn, execFileSync } = require('child_process');
 const QRCode = require('qrcode');
 const { openDb } = require('./db');
-const { groupSlug, bestHostIp, rankHostIps, validateAnswer, splitMarpSlides, deriveMarpMarkdown } = require('./lib');
+const { groupSlug, bestHostIp, rankHostIps, validateAnswer, splitMarpSlides, deriveMarpMarkdown, normalizeQuiz, CONFIG_FILE } = require('./lib');
 const { readAssetText } = require('./assets');
 const { ensureDeckPdf } = require('./convert');
+const { loadConfig } = require('./config');
+const { readQuestions, saveQuestions, restoreQuestions, listHistory, readHistory } = require('./editor');
 
 const ENGINE_DIR = __dirname;
 const VERSION = require('./package.json').version;
@@ -59,23 +61,13 @@ const opt = (name, dflt) => {
 };
 const has = (name) => argv.includes('--' + name);
 
+// --dir is resolved first and is the one setting a config file may not touch:
+// it says where the content root is, and the content root is where sessions and
+// presik.config.json are looked up. Everything else waits until we know which
+// session is running — a session may carry its own config (see "settings" below).
 const CONTENT_DIR = path.resolve(opt('dir', process.cwd()));
-const PORT = parseInt(opt('port', '3000'), 10);
-const HOST_OVERRIDE = opt('host', null); // advertised LAN address (skip auto-detect)
-// The teacher key controls the whole quiz (next/reveal/reset). "teach" used to
-// be the default — but the project is public, so a known default means anyone
-// on the network can hijack a class. Default is now random per run; --key
-// still lets you pin a memorable one on purpose.
-const KEY_GIVEN = opt('key', null);
-const KEY = KEY_GIVEN || crypto.randomBytes(4).toString('hex');
-// Only trust X-Forwarded-For when we're actually behind the cloudflared tunnel
-// (all students then share Cloudflare's edge IP, so the real client IP is in
-// the header). On a plain LAN we ignore it — otherwise a cheater could spoof
-// the header to dodge the per-IP answer limits below.
-const TRUST_PROXY = argv.includes('--tunnel');
 const DATA_DIR = path.join(CONTENT_DIR, '.presik');
-const DB_FILE = path.resolve(opt('db', path.join(DATA_DIR, 'data.db')));
-let GROUP = opt('group', null);
+const OPEN_EDITOR = has('edit'); // `presik edit <session>` — bin/cli.js rewrites the subcommand to this flag
 
 // ---------------------------------------------------------------- content sessions
 // A session is any directory that has deck.marp.md and/or questions.json in
@@ -149,6 +141,46 @@ const sessionPath = toSessionName(CONTENT_DIR, SESSION_DIR);
 const name = sessionPath === '.' ? path.basename(CONTENT_DIR) || 'session' : sessionPath;
 const course = path.dirname(sessionPath) === '.' ? null : path.dirname(sessionPath);
 
+// ---------------------------------------------------------------- settings
+// Anything you didn't type can come from presik.config.json — the project's, at
+// the content root, and the session's own, if it has one. A flag always wins, so
+// the command line never lies about what it's doing. See config.js.
+const { config: CONFIG, files: CONFIG_FILES, errors: CONFIG_ERRORS } = loadConfig(CONTENT_DIR, SESSION_DIR);
+if (CONFIG_ERRORS.length) {
+  console.error('\n  Problem with ' + CONFIG_FILE + ':\n');
+  CONFIG_ERRORS.forEach((e) => console.error('    ' + e));
+  console.error('');
+  process.exit(1);
+}
+// Flag values are strings (they came off a command line); config values already
+// carry their JSON type.
+const setting = (nm, dflt) => {
+  const v = opt(nm, null);
+  if (v != null) return v;
+  return CONFIG[nm] != null ? CONFIG[nm] : dflt;
+};
+// A path typed as a flag is relative to where you typed it; a path from a config
+// file was already resolved against that file's own directory (config.js).
+const cliPath = (nm) => (opt(nm, null) ? path.resolve(opt(nm, null)) : null);
+
+const PORT = parseInt(setting('port', 3000), 10);
+const HOST_OVERRIDE = setting('host', null); // advertised LAN address (skip auto-detect)
+// The teacher key controls the whole quiz (next/reveal/reset). "teach" used to
+// be the default — but the project is public, so a known default means anyone
+// on the network can hijack a class. Default is now random per run; --key (or
+// "key" in a config file) still lets you pin a memorable one on purpose.
+const KEY_GIVEN = setting('key', null);
+const KEY = KEY_GIVEN || crypto.randomBytes(4).toString('hex');
+const TUNNEL = has('tunnel') || CONFIG.tunnel === true;
+const NO_GROUP = has('no-group') || CONFIG.noGroup === true;
+// Only trust X-Forwarded-For when we're actually behind the cloudflared tunnel
+// (all students then share Cloudflare's edge IP, so the real client IP is in
+// the header). On a plain LAN we ignore it — otherwise a cheater could spoof
+// the header to dodge the per-IP answer limits below.
+const TRUST_PROXY = TUNNEL;
+const DB_FILE = cliPath('db') || CONFIG.db || path.join(DATA_DIR, 'data.db');
+let GROUP = setting('group', null);
+
 const QUESTIONS_FILE = path.join(SESSION_DIR, 'questions.json');
 const DECK_FILE = path.join(SESSION_DIR, 'deck.marp.md');
 const DECK_HTML = path.join(SESSION_DIR, 'deck.marp.html');
@@ -156,7 +188,7 @@ const DECK_BUILD = path.join(SESSION_DIR, '.deck.build.md'); // derived deck wit
 const DECK_PDF = path.join(SESSION_DIR, 'deck.pdf');
 const DECK_PPTX = path.join(SESSION_DIR, 'deck.pptx');
 const DECK_KEY = path.join(SESSION_DIR, 'deck.key');
-const QR_FILE = path.resolve(opt('qr', path.join(SESSION_DIR, 'join-qr.svg')));
+const QR_FILE = cliPath('qr') || CONFIG.qr || path.join(SESSION_DIR, 'join-qr.svg');
 
 if (!fs.existsSync(QUESTIONS_FILE)) {
   console.error('\n  Missing ' + path.relative(CONTENT_DIR, QUESTIONS_FILE) + '\n');
@@ -172,33 +204,20 @@ try {
   console.error('\n  Error in JSON (' + QUESTIONS_FILE + '):\n  ' + e.message + '\n');
   process.exit(1);
 }
-if (!Array.isArray(quiz.questions) || !quiz.questions.length) {
-  console.error('\n  File has no "questions" array.\n');
-  process.exit(1);
+// Validate the schema up front, not in the middle of class. This is the same
+// validator /edit runs before accepting a save (normalizeQuiz, in lib.js) — so
+// the editor can't write a file the server then refuses to start on.
+{
+  const { quiz: normalized, errors, warnings } = normalizeQuiz(quiz, name);
+  if (errors.length) {
+    console.error('');
+    errors.forEach((e) => console.error('  ' + e));
+    console.error('');
+    process.exit(1);
+  }
+  warnings.forEach((w) => console.error('  Note: ' + w));
+  quiz = normalized;
 }
-// validate the schema up front, not in the middle of class
-quiz.questions.forEach((q, i) => {
-  if (!q.id) q.id = name.replace(/\//g, '-') + '-q' + (i + 1);
-  const t = (q.type = q.type || 'choice');
-  if (!['choice', 'text', 'scale'].includes(t)) {
-    console.error(`  Question ${q.id}: unknown type "${t}" (allowed: choice, text, scale)`);
-    process.exit(1);
-  }
-  if (t === 'choice' && !(q.options || []).length) {
-    console.error(`  Question ${q.id}: type=choice but has no options`);
-    process.exit(1);
-  }
-  if (t === 'scale') {
-    q.min = q.min || 1;
-    q.max = q.max || 5;
-  }
-  // Optional deck placement (PDF decks): the question appears right after this
-  // 1-based page. Marp decks ignore it — they use inline markers instead.
-  if (q.slide != null && (!Number.isInteger(q.slide) || q.slide < 1)) {
-    console.error(`  Question ${q.id}: "slide" must be a positive integer (page number)`);
-    process.exit(1);
-  }
-});
 
 // ---------------------------------------------------------------- slides (Marp)
 // Slides are the source of truth in deck.marp.md; deck.marp.html is a build
@@ -507,6 +526,44 @@ function broadcast() {
   }
 }
 
+// An edit from /edit lands here: swap the in-memory quiz without dropping the
+// class on the floor. Answers live in a Map keyed by question id, so a question
+// keeps its answers for as long as it keeps its id — which is exactly why the
+// editor writes ids out explicitly (see editor.js) instead of leaning on
+// position, which reordering would change underneath them.
+function reloadQuiz(doc) {
+  const wasOn = cur() ? cur().id : null;
+  quiz = doc;
+  const live = new Set(quiz.questions.map((q) => q.id));
+  for (const qid of [...answers.keys()]) if (!live.has(qid)) answers.delete(qid);
+  // Stay on whatever question the class was looking at, wherever it just moved
+  // to. Deleted out from under us (or never started) → fall back to idle rather
+  // than to a dangling index.
+  if (wasOn) state.index = quiz.questions.findIndex((q) => q.id === wasOn);
+  else state.index = Math.min(state.index, quiz.questions.length - 1);
+  if (state.index < 0) state.revealed = false;
+  if (runId) {
+    try {
+      db.prepare('UPDATE runs SET title = ? WHERE id = ?').run(quiz.title || name, runId);
+    } catch (_) {}
+  }
+  persistLiveState();
+  broadcast(); // /host, /present and any open deck pick the edit up live
+}
+
+// What the editor needs to offer "after slide N" as a real choice. Marp is the
+// source of truth in markdown, so it's countable here; a PDF's page count only
+// exists once pdf.js has parsed it in the browser, so the editor asks the deck
+// for that itself.
+function deckSlideCount() {
+  if (deckType !== 'marp') return null;
+  try {
+    return splitMarpSlides(fs.readFileSync(DECK_FILE, 'utf8')).slides.length;
+  } catch (_) {
+    return null;
+  }
+}
+
 // ---------------------------------------------------------------- http
 const send = (res, code, type, body) => {
   res.writeHead(code, {
@@ -520,12 +577,14 @@ const send = (res, code, type, body) => {
   });
   res.end(body);
 };
-const readBody = (req) =>
+// An answer is a few bytes; a whole questions.json is not. The cap stays tight
+// for the student-facing routes and is raised explicitly for an editor save.
+const readBody = (req, limit = 8000) =>
   new Promise((resolve) => {
     let b = '';
     req.on('data', (c) => {
       b += c;
-      if (b.length > 8000) req.destroy();
+      if (b.length > limit) req.destroy();
     });
     req.on('end', () => {
       try {
@@ -717,6 +776,65 @@ const server = http.createServer(async (req, res) => {
     return send(res, 200, 'application/json; charset=utf-8', JSON.stringify(exportData(), null, 2));
   }
 
+  // ---------------------------------------------------------------- editor
+  // /edit is the authoring surface — same server, same teacher key. Students
+  // can't reach it (they have no key), and it stays reachable while a class is
+  // running on purpose: fixing a typo you only notice on the projector, mid
+  // lecture, is exactly when you need it.
+  if (p === '/edit' || p === '/edit/') {
+    if (!isHost) return send(res, 403, 'text/plain; charset=utf-8', 'Add ?key=...');
+    return send(res, 200, 'text/html; charset=utf-8', readAssetText('public/edit.html'));
+  }
+  if (p === '/edit.css') return send(res, 200, 'text/css; charset=utf-8', readAssetText('public/edit.css'));
+  if (p === '/edit.js') return send(res, 200, 'application/javascript; charset=utf-8', readAssetText('public/edit.js'));
+  if (p === '/edit.questions.js') return send(res, 200, 'application/javascript; charset=utf-8', readAssetText('public/edit.questions.js'));
+
+  if (p.startsWith('/api/edit/')) {
+    if (!isHost) return send(res, 403, 'application/json; charset=utf-8', '{"ok":false,"errors":["forbidden"]}');
+    const json = (code, obj) => send(res, code, 'application/json; charset=utf-8', JSON.stringify(obj));
+
+    // Everything the editor needs to draw itself, in one round trip.
+    if (p === '/api/edit/state' && req.method === 'GET') {
+      const r = readQuestions(QUESTIONS_FILE, name);
+      return json(200, {
+        ok: r.ok !== false,
+        version: VERSION,
+        session: name,
+        course,
+        title: quiz.title || name,
+        deck: { type: deckType, slides: deckSlideCount() },
+        doc: r.doc || null,
+        rev: r.rev || 0,
+        errors: r.errors || [],
+        warnings: r.warnings || [],
+      });
+    }
+
+    if (p === '/api/edit/questions' && req.method === 'PUT') {
+      const body = await readBody(req, 2e6); // a whole questions.json, not an answer
+      const r = saveQuestions({ file: QUESTIONS_FILE, dataDir: DATA_DIR, sessionName: name, doc: body.doc, rev: body.rev });
+      if (r.ok) reloadQuiz(r.doc);
+      return json(r.ok ? 200 : r.conflict ? 409 : 422, r);
+    }
+
+    if (p === '/api/edit/history' && req.method === 'GET') return json(200, { ok: true, entries: listHistory(DATA_DIR, name, 'questions') });
+
+    if (p === '/api/edit/history/entry' && req.method === 'GET') {
+      const content = readHistory(DATA_DIR, name, 'questions', url.searchParams.get('id'));
+      if (content == null) return json(404, { ok: false, errors: ['no such history entry'] });
+      return json(200, { ok: true, content });
+    }
+
+    if (p === '/api/edit/restore' && req.method === 'POST') {
+      const body = await readBody(req);
+      const r = restoreQuestions({ file: QUESTIONS_FILE, dataDir: DATA_DIR, sessionName: name, id: body.id });
+      if (r.ok) reloadQuiz(r.doc);
+      return json(r.ok ? 200 : 422, r);
+    }
+
+    return json(404, { ok: false, errors: ['unknown editor endpoint'] });
+  }
+
   send(res, 404, 'text/plain; charset=utf-8', 'not found');
 });
 
@@ -772,6 +890,17 @@ function localIp() {
   return HOST_OVERRIDE || bestHostIp(os.networkInterfaces());
 }
 
+// `presik edit <session>` — hand the teacher the editor without making them
+// copy a URL out of the banner. localhost, not the LAN address: this browser is
+// on this machine by definition. Best-effort — a headless box just prints the
+// URL like always.
+function openBrowser(url) {
+  const cmd = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'start' : 'xdg-open';
+  try {
+    spawn(cmd, [url], { stdio: 'ignore', detached: true, shell: process.platform === 'win32' }).unref();
+  } catch (_) {}
+}
+
 async function setJoinUrl(url) {
   joinUrl = url;
   qrSvg = await QRCode.toString(url, { type: 'svg', margin: 1, color: { dark: '#0b1118', light: '#ffffff' } });
@@ -792,6 +921,7 @@ function banner() {
   );
   console.log('\n  Students:  ' + joinUrl);
   console.log('  Teacher:   ' + joinUrl.replace(/\/$/, '') + '/host?key=' + KEY + '  (control + live view — keep private)');
+  console.log('  Editor:    ' + joinUrl.replace(/\/$/, '') + '/edit?key=' + KEY + '  (write the questions — keep private)');
   if (deckType === 'marp' && MARP_AVAILABLE) console.log('  Slides:    ' + joinUrl.replace(/\/$/, '') + '/slides?key=' + KEY + '  (without ?key= — view only, no control)');
   else if (deckType === 'pdf') console.log('  Slides:    ' + joinUrl.replace(/\/$/, '') + '/slides?key=' + KEY + '  (PDF deck; without ?key= — view only)');
   else if (deckType === 'marp') console.log('  Slides:    (deck.marp.md found, but Marp isn\'t in this build — use a PDF deck, or install via npm)');
@@ -799,9 +929,12 @@ function banner() {
   if (!KEY_GIVEN)
     console.log('\n  Key:       ' + KEY + '  (random this run; anyone with it controls the quiz — pin your own with --key)');
   console.log('\n  DB:        ' + path.relative(process.cwd(), DB_FILE) + '  (for analysis — presik-report)');
+  // Settings that came from a file rather than from what you just typed —
+  // otherwise a surprising port is a mystery instead of a lookup.
+  if (CONFIG_FILES.length) console.log('  Config:    ' + CONFIG_FILES.join(', '));
   // If more than one plausible LAN address exists, students may be handed the
   // wrong one; tell the teacher how to override.
-  if (!HOST_OVERRIDE && !argv.includes('--tunnel')) {
+  if (!HOST_OVERRIDE && !TUNNEL) {
     const cands = rankHostIps(os.networkInterfaces()).filter((c) => c.score >= 4);
     if (cands.length > 1)
       console.log('  Note:      several network addresses found — if students can\'t reach the link, try --host ' + cands[1].address);
@@ -811,8 +944,8 @@ function banner() {
 
 function resolveGroup() {
   return new Promise((resolve) => {
-    if (GROUP) return resolve(GROUP.trim() || null);
-    if (has('no-group') || !process.stdin.isTTY) return resolve(null);
+    if (GROUP) return resolve(String(GROUP).trim() || null);
+    if (NO_GROUP || !process.stdin.isTTY) return resolve(null);
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
     rl.question('  Group/cohort name for this session (Enter — no name): ', (answer) => {
       rl.close();
@@ -860,7 +993,9 @@ server.on('error', (e) => {
       }
     }
 
-    if (!has('tunnel')) {
+    if (OPEN_EDITOR) openBrowser('http://localhost:' + PORT + '/edit?key=' + encodeURIComponent(KEY));
+
+    if (!TUNNEL) {
       banner();
       return;
     }

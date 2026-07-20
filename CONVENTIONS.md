@@ -52,7 +52,8 @@ With no argument, `presik`:
 
 | File | Required | Who writes it | Purpose |
 |---|---|---|---|
-| `questions.json` | yes | you | the quiz definition — schema below |
+| `questions.json` | yes | you (by hand or via `/edit`) | the quiz definition — schema below |
+| `presik.config.json` | no | you | per-session settings that override the root's — see "Settings file" |
 | `deck.marp.md` | no | you | Marp slides; if present, `/slides` renders them |
 | `deck.pdf` | no | you | a PDF deck; `/slides` renders it with the quiz interleaved |
 | `deck.pptx` / `deck.key` | no | you | a PowerPoint / Keynote deck — presik converts it to PDF under the hood (cached), then treats it like `deck.pdf` |
@@ -126,6 +127,7 @@ Everything that isn't content, but gets produced while running, lives in one pla
 .presik/
   data.db          — shared SQLite database: all courses, sessions, groups, runs (runs/answers)
   results/         — a JSON snapshot of answers when the server stops (Ctrl+C), one per run
+  history/<session>/ — previous versions of questions.json, kept by the /edit editor (50 per session)
 ```
 
 The `runs`/`answers` tables have `course` and `session` columns derived from the session's path — so `report.js`/`presik-report` filters and compares both by session and by course, no matter how deeply the content is nested.
@@ -156,3 +158,58 @@ presik <session> --db path.db     # where the database is (default — .presik/d
 ```
 
 **The teacher key.** With no `--key`, presik generates a random key each run and prints it in the banner; the `/host` and `/slides` control links embed it. Because the project is public, a fixed default (there used to be `teach`) would let anyone on the network drive or reset a class — hence random. Pass `--key <word>` when you want a stable, memorable key (e.g. reused across a course); the links are only as private as you keep them.
+
+## Settings file — `presik.config.json` (optional)
+
+Typing the same flags every week gets old. Drop a **`presik.config.json`** at the content root and those flags become the defaults for the project:
+
+```json
+{
+  "port": 8080,
+  "key": "web-dev-2026",
+  "group": "3-A"
+}
+```
+
+A session can carry its own `presik.config.json` to override the root for that one session (e.g. a different port). The keys are exactly the flag names — `port`, `host`, `key`, `group`, `noGroup`, `tunnel`, `qr`, `db` — so there's nothing new to learn, and the values carry their JSON type (`"port": 8080`, `"tunnel": true`).
+
+**Precedence — a flag always wins, so the command line never lies about what it's doing:**
+
+```
+CLI flag   >   <session>/presik.config.json   >   <root>/presik.config.json   >   built-in default
+```
+
+Notes:
+- **`--dir` is the one setting a config file can't set** — it names where the content root (and so the config file itself) is found, which would be circular.
+- **Relative `qr`/`db` paths in a config file resolve against that file's own directory**, not wherever you happen to run presik from — the file means the same thing regardless of your shell's cwd. (A path typed as a flag still resolves against the cwd, as you'd expect while typing it.)
+- A `null` value reads as "not set", so a session file can defer a single key back to the root's value.
+- The banner prints which config files were loaded, so a surprising port is a lookup, not a mystery.
+- Unknown keys, wrong types, or a bad port stop the launch with a clear message — up front, not mid-class.
+
+`presik.config.json` is settings only; it never contains questions or slides.
+
+## The question editor — `/edit`
+
+You can write `questions.json` by hand (the schema above is the whole contract), or edit it in a browser with a live, Google-Forms-style editor — whichever you prefer, on the same file. The editor is a **key-protected route on the normal server**, so students on the LAN can't reach it, and it stays available while a class is running (fixing a typo you only spot on the projector is exactly when you need it).
+
+```bash
+presik edit s01        # boots the server and opens the editor in your browser
+presik s01             # ...or just run normally — the banner prints the Editor URL
+```
+
+The banner shows it alongside the others:
+
+```
+  Editor:    http://192.168.1.5:3000/edit?key=ab12cd34   (write the questions — keep private)
+```
+
+How it behaves:
+
+- **WYSIWYG cards** — one card per question, edited in place. An option row shows the circle the student taps; marking an option correct paints it the same green `/host` uses for the winning bar. Choice / text / scale is a one-tap switch, and switching away from *choice* keeps your options so switching back doesn't lose them.
+- **Autosave** — changes write to `questions.json` about a second after you stop typing (`All changes saved` in the corner). Writes are **atomic** (a crash mid-save never leaves a half-written file) and keep the house formatting — one option per line — so the file still diffs cleanly and unknown keys like `_readme` survive untouched.
+- **Ids are materialized on first save.** Answers are stored per question **id** (live and in the archive), so the editor writes each question's id into the file explicitly rather than leaning on position — that's what makes reordering safe, in the editor or later by hand. Editing a running session hot-reloads it: a question keeps its answers as long as it keeps its id.
+- **Version history** — every save first snapshots the previous file under `.presik/history/<session>/` (at most one a minute, 50 kept). The "History" panel previews and restores any of them; restoring keeps the current version in the list, so it's undoable too. `Cmd/Ctrl+Z` undoes structural edits (add/delete/reorder/type).
+- **Same validator as startup.** The editor refuses a save that the server would refuse to start on (duplicate id, an option-less choice question, `min ≥ max`), so the editor can't write a file that then won't launch. Half-typed questions just warn — they don't block the save.
+- **Placement.** Each card's "Shows after slide N" writes the question's `"slide"` (see above); with no deck, the card says so and the question runs from `/host` only.
+
+The editor is built as a shell with pluggable modules (Questions today), so a slide editor can arrive as a second tab on the same page without changing any of this.

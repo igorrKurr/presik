@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Editor — presik</title>
+<!-- presik -->
+<link rel="stylesheet" href="/edit.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="ident">
+      <div class="crumb" id="crumb">…</div>
+      <input class="title-input" id="title" placeholder="Untitled session" aria-label="Session title" autocomplete="off" spellcheck="false">
+    </div>
+    <div class="tools">
+      <span class="save" id="save" aria-live="polite"></span>
+      <button class="ghost" id="historyBtn" title="Earlier versions of this file">History</button>
+      <a class="ghost" id="hostLink" target="_blank" rel="noreferrer">Host</a>
+      <a class="ghost" id="deckLink" target="_blank" rel="noreferrer" hidden>Slides</a>
+    </div>
+  </header>
+
+  <!-- One tab per registered module. Hidden while there's only one — the slide
+       editor will make this a real tab bar without touching the shell. -->
+  <nav class="tabs" id="tabs" hidden></nav>
+
+  <div class="banner" id="banner" hidden></div>
+
+  <main id="pane"><div class="loading">Loading…</div></main>
+
+  <aside class="drawer" id="drawer" hidden aria-label="Version history">
+    <div class="drawer-head">
+      <strong>Version history</strong>
+      <button class="ghost" id="drawerClose" aria-label="Close">✕</button>
+    </div>
+    <p class="drawer-note">Saved automatically as you edit, at most one entry a minute. Restoring keeps the current version in the list, so it's undoable too.</p>
+    <div id="historyList" class="hlist"></div>
+  </aside>
+  <div class="scrim" id="scrim" hidden></div>
+
+  <div class="toast" id="toast" hidden></div>
+
+<script src="/edit.js"></script>
+<script src="/edit.questions.js"></script>
+</body>
+</html>

@@ -50,3 +50,35 @@ jobs:
         run: |
           gh release create "${{ github.ref_name }}" --title "${{ github.ref_name }}" --generate-notes 2>/dev/null || true
           gh release upload "${{ github.ref_name }}" ${{ matrix.asset }}* --clobber
+
+  # Publish the npm package (the source that runs via `npx presik`) to GitHub
+  # Packages — only once every platform's binary has built and smoke-passed, and
+  # only on a version tag. package.json keeps `private: true` as a guard against
+  # an accidental npmjs publish; here we drop it and scope the name to the owner,
+  # which GitHub Packages requires. The binaries themselves go to the Release
+  # above; this is the installable `@<owner>/presik` for `npm i` / `npx`.
+  publish-package:
+    name: Publish package to GitHub Packages
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          registry-url: 'https://npm.pkg.github.com'
+      - name: Prepare package for GitHub Packages
+        run: |
+          owner=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          npm pkg delete private
+          npm pkg set name="@${owner}/presik"
+          # Keep the published version in lockstep with the release tag (v1.2.3 → 1.2.3).
+          npm version --no-git-tag-version --allow-same-version "${GITHUB_REF_NAME#v}"
+      - name: Publish
+        run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -7,6 +7,21 @@ import { spawn } from 'node:child_process';
 import { mkdtempSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { get as httpGet } from 'node:http';
+
+// Plain node:http with no keep-alive (agent:false), so no pooled sockets linger
+// into teardown — undici's keep-alive handles racing process.exit are one way to
+// hit the Windows "UV_HANDLE_CLOSING" libuv assertion this script used to trip.
+function get(url) {
+  return new Promise((resolve, reject) => {
+    const req = httpGet(url, { agent: false }, (res) => {
+      res.resume(); // drain so the socket can close
+      res.on('end', () => resolve({ ok: res.statusCode >= 200 && res.statusCode < 300, status: res.statusCode }));
+    });
+    req.on('error', reject);
+    req.setTimeout(5000, () => req.destroy(new Error('request timed out')));
+  });
+}
 
 // Absolute — the child runs with cwd set to the temp session dir below.
 const bin = resolve(process.argv[2] || join('dist', process.platform === 'win32' ? 'presik.exe' : 'presik'));
@@ -25,12 +40,14 @@ const base = `http://127.0.0.1:${PORT}`;
 const child = spawn(bin, ['lec', '--no-group', '--key', KEY, '--port', String(PORT)], { cwd: dir, stdio: 'ignore' });
 child.on('error', (e) => { console.error('✗ could not launch ' + bin + ': ' + e.message); process.exit(1); });
 
-const routes = [`/slides?key=${KEY}`, '/deck.pdf', '/vendor/pdf.mjs', '/vendor/pdf.worker.mjs', '/embed.css', '/'];
+// /widget-sdk.js is an embedded asset like /embed.js — checking it here guards
+// against forgetting to list a new asset in build/sea-config.json.
+const routes = [`/slides?key=${KEY}`, '/deck.pdf', '/vendor/pdf.mjs', '/vendor/pdf.worker.mjs', '/embed.css', '/widget-sdk.js', '/'];
 
 try {
   await waitFor(`${base}/`, 25000);
   for (const r of routes) {
-    const res = await fetch(base + r);
+    const res = await get(base + r);
     if (!res.ok) throw new Error(`${r} → HTTP ${res.status}`);
   }
   console.log(`✓ smoke: ${bin} serves the deck viewer + embedded pdf.js assets`);
@@ -40,11 +57,21 @@ try {
   done(1);
 }
 
-function done(code) { try { child.kill('SIGKILL'); } catch (_) {} process.exit(code); }
+// Kill the child and wait for its 'exit' before exiting ourselves: calling
+// process.exit() while the child-process handle is still tearing down is what
+// trips the Windows libuv assertion (src\win\async.c). A short fallback keeps CI
+// from hanging if the child somehow never dies.
+function done(code) {
+  const bye = () => process.exit(code);
+  child.once('exit', bye);
+  child.once('error', bye);
+  try { child.kill('SIGKILL'); } catch (_) { return bye(); }
+  setTimeout(bye, 3000).unref();
+}
 async function waitFor(url, ms) {
   const end = Date.now() + ms;
   while (Date.now() < end) {
-    try { const res = await fetch(url); if (res.ok) return; } catch (_) {}
+    try { const res = await get(url); if (res.ok) return; } catch (_) {}
     await new Promise((r) => setTimeout(r, 300));
   }
   throw new Error('binary did not start listening within ' + ms + 'ms');

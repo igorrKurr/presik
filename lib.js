@@ -2,12 +2,13 @@
 // (test/lib.test.js). Nothing here touches the network, the filesystem, or
 // process state — so it's all trivially unit-testable.
 
-// A session's name is its path relative to the content root, POSIX-style.
-function toSessionName(root, dir, sep) {
+// A session's name is its path relative to the content root, POSIX-style — the
+// same spelling on every OS, so slugs/URLs/ids don't drift by platform.
+// path.relative yields "\" separators on Windows, so normalize either one.
+function toSessionName(root, dir) {
   const path = require('path');
-  sep = sep || path.sep;
   const rel = path.relative(root, dir);
-  return (rel || '.').split(sep).join('/');
+  return (rel || '.').split(/[\\/]/).join('/');
 }
 
 // A session name (a POSIX path like "web-dev/s01") → one filesystem-safe token.

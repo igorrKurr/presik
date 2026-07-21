@@ -156,9 +156,11 @@ test('rankHostIps: handles numeric family (Node os module form)', () => {
 });
 
 test('toSessionName: POSIX path relative to root, "." for the root itself', () => {
-  assert.strictEqual(toSessionName('/a', '/a/s01', '/'), 's01');
-  assert.strictEqual(toSessionName('/a', '/a/web-dev/s01', '/'), 'web-dev/s01');
-  assert.strictEqual(toSessionName('/a', '/a', '/'), '.');
+  // POSIX-style output on every OS: path.relative gives "\" on Windows, so the
+  // name must come back with "/" there too (no explicit separator to inject).
+  assert.strictEqual(toSessionName('/a', '/a/s01'), 's01');
+  assert.strictEqual(toSessionName('/a', '/a/web-dev/s01'), 'web-dev/s01');
+  assert.strictEqual(toSessionName('/a', '/a'), '.');
 });
 
 test('buildDeckSteps: interleaves question+reveal after each placed page', () => {

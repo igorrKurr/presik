@@ -36,6 +36,9 @@
   .explain { margin-top:14px; padding:14px; border-radius:10px; background:var(--panel);
     border:1px solid var(--panel2); font-size:15px; line-height:1.5; color:var(--muted); }
   .wait { text-align:center; color:var(--muted); padding:60px 0; font-size:17px; line-height:1.6; }
+  iframe.widget { width:100%; border:1px solid var(--panel2); border-radius:12px;
+    background:var(--panel); display:block; margin-top:4px; }
+  .widget-status { margin-top:12px; }
 </style>
 </head>
 <body>
@@ -51,6 +54,8 @@
   const meta = document.getElementById('meta');
   const picked = {};
   let lastQid = null;
+  let lastState = null;      // latest /api/stream snapshot — the widget bridge reads it
+  let widgetMounted = null;  // qid whose iframe is currently mounted (mount once, never rebuild)
 
   // Question/option/explain text is author-written, but it still goes through
   // innerHTML — so escape it, both to be safe and so ordinary characters like
@@ -68,14 +73,20 @@
   }
 
   function render(s) {
+    lastState = s;
     meta.textContent = s.index >= 0 ? s.title + ' · ' + (s.index + 1) + ' / ' + s.total : s.title;
     if (!s.question) {
       app.innerHTML = '<div class="wait">Waiting for it to start…<br><span style="font-size:14px">Keep this page open.</span></div>';
-      lastQid = null; return;
+      lastQid = null; widgetMounted = null; return;
     }
     const q = s.question;
-    if (q.id !== lastQid) { lastQid = q.id; app.innerHTML = ''; }
+    if (q.id !== lastQid) { lastQid = q.id; widgetMounted = null; app.innerHTML = ''; }
     const my = picked[q.id];
+
+    // A widget renders its own interactive front-end in a sandboxed iframe. It
+    // must survive every stream tick, so it's mounted once and thereafter only
+    // *told* about state changes over postMessage — never re-rendered here.
+    if (q.type === 'widget') return renderWidget(q, s, my);
 
     let h = '<h1>' + esc(q.text) + '</h1>';
     if (q.note) h += '<div class="note">' + esc(q.note) + '</div>';
@@ -117,6 +128,75 @@
       if (v) { send(q.id, v); render(s); }
     };
   }
+
+  // ---------------------------------------------------------------- widgets
+  // The sandboxed game and this page speak a tiny postMessage protocol:
+  //   game → page:  {presik:'ready'}            asks for its config + state
+  //                 {presik:'answer', value}     reports the student's answer
+  //   page → game:  {presik:'init', …}           config + current state, once
+  //                 {presik:'state', …}           reveal/value updates thereafter
+  // The value still goes through /api/answer, so validateAnswer gates it exactly
+  // like a tapped button — untrusted game code can't post an illegal answer.
+  function frame() { return document.getElementById('wframe'); }
+  function postToWidget(msg) { const f = frame(); if (f && f.contentWindow) f.contentWindow.postMessage(msg, '*'); }
+  function widgetHeight(q) {
+    const h = q.widget && q.widget.height;
+    return Math.max(120, Math.min(Number(h) || 420, Math.round(window.innerHeight * 0.9)));
+  }
+  function widgetStateMsg(q, s, my) {
+    return { presik: 'state', revealed: !!s.revealed, value: my == null ? null : my,
+      correct: (s.revealed && q.correct) || null };
+  }
+  function updateWidgetStatus(q, s, my) {
+    const el = document.getElementById('wstatus');
+    if (!el) return;
+    let h = my !== undefined
+      ? '<div class="status ok">Answer recorded' + (s.revealed ? '.' : ' — you can still change it above.') + '</div>'
+      : '<div class="status">Play through the question above — it sends your answer.</div>';
+    if (s.revealed && q.explain) h += '<div class="explain">' + esc(q.explain) + '</div>';
+    el.innerHTML = h;
+  }
+  function renderWidget(q, s, my) {
+    if (widgetMounted !== q.id) {
+      widgetMounted = q.id;
+      let shell = '<h1>' + esc(q.text) + '</h1>';
+      if (q.note) shell += '<div class="note">' + esc(q.note) + '</div>';
+      // sandbox="allow-scripts" WITHOUT allow-same-origin → the game runs at a
+      // null origin: no access to this page's DOM, storage, or the session.
+      shell += '<iframe class="widget" id="wframe" title="Interactive question" ' +
+        'sandbox="allow-scripts" style="height:' + widgetHeight(q) + 'px"></iframe>';
+      shell += '<div class="widget-status" id="wstatus"></div>';
+      app.innerHTML = shell;
+      const f = frame();
+      if (q.widget && q.widget.srcdoc != null) f.srcdoc = q.widget.srcdoc;
+      else if (q.widget && q.widget.src) f.src = q.widget.src;
+      else document.getElementById('wstatus').textContent = (q.widget && q.widget.error) || 'This question has no widget to load.';
+    }
+    updateWidgetStatus(q, s, my);
+    postToWidget(widgetStateMsg(q, s, my)); // no-op until the game has loaded; the handshake re-sends
+  }
+
+  window.addEventListener('message', (e) => {
+    const f = frame();
+    if (!f || e.source !== f.contentWindow) return; // only the mounted widget may talk
+    const d = e.data;
+    if (!d || typeof d !== 'object' || typeof d.presik !== 'string') return;
+    const q = lastState && lastState.question;
+    if (!q || q.type !== 'widget') return;
+    if (d.presik === 'ready') {
+      // Carry the current state on init too, but keep presik:'init' — spreading
+      // the whole state message (presik:'state') would clobber it and the game
+      // would never initialize.
+      const st = widgetStateMsg(q, lastState, picked[q.id]);
+      postToWidget({ presik: 'init', answer: q.answer || 'choice', text: q.text, note: q.note || null,
+        options: q.options || [], min: q.min, max: q.max, config: (q.widget && q.widget.config) || null,
+        revealed: st.revealed, value: st.value, correct: st.correct });
+    } else if (d.presik === 'answer' && d.value != null) {
+      send(q.id, String(d.value).slice(0, 600));
+      updateWidgetStatus(q, lastState, picked[q.id]);
+    }
+    // 'progress' or anything unrecognized: ignored
+  });
 
   const es = new EventSource('/api/stream');
   es.onmessage = (e) => render(JSON.parse(e.data));

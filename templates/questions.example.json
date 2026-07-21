@@ -4,10 +4,13 @@
   "_readme": [
     "Drop this file as questions.json into a session folder (e.g. s02/questions.json)",
     "and run: presik s02. Full contract — CONVENTIONS.md.",
-    "type: choice | text | scale",
+    "type: choice | text | scale | widget",
     "  choice — options; more than one can be correct: \"correct\": true",
     "  text   — free-form answer (cold open, exit ticket)",
     "  scale  — a min..max scale (e.g. confidence 1-5)",
+    "  widget — your own interactive front-end (a form, a game) in a sandboxed",
+    "           iframe on the phone; set \"answer\" to choice|scale|text — it is",
+    "           validated/revealed/archived as that kind. See CONVENTIONS.md.",
     "explain — shown to students after reveal (both on slides and on /host)",
     "hint    — visible ONLY TO YOU, on /host: what to do with the result",
     "slide   — the 1-based slide/page this question appears after, in your deck",
@@ -52,6 +55,22 @@
       "text": "What's still unclear?",
       "note": "Anonymous. (No \"slide\", so it only runs from /host — e.g. an exit ticket.)",
       "hint": "Read before the next class. Common themes — opener for next time."
+    },
+    {
+      "type": "widget",
+      "text": "Tap the gate you'd leave the maze by.",
+      "note": "An interactive question. The whole front-end is inline in \"srcdoc\" — a real game can live here too, or point \"src\" at a bundle file. It reports one option id, graded like a choice question.",
+      "answer": "choice",
+      "options": [
+        { "id": "north", "text": "North gate" },
+        { "id": "east", "text": "East gate", "correct": true }
+      ],
+      "widget": {
+        "height": 220,
+        "srcdoc": "<!doctype html><meta charset=utf-8><style>body{margin:0;font:16px system-ui;background:#1b2634;color:#f1f5f9;padding:16px}button{display:block;width:100%;margin:0 0 8px;padding:14px;border-radius:10px;border:1px solid #223041;background:#10161f;color:inherit;font:inherit}button.correct{border-color:#4ade80}</style><div id=root></div><script>var Q=null;onmessage=function(e){var d=e.data||{};if(d.presik=='init'){Q=d;draw()}if(d.presik=='state'&&Q){Q.revealed=d.revealed;Q.correct=d.correct;draw()}};function draw(){var r=root;r.innerHTML='';(Q.options||[]).forEach(function(o){var b=document.createElement('button');b.textContent=o.text||o.id;if(Q.revealed&&Q.correct&&Q.correct.indexOf(o.id)>=0)b.className='correct';b.onclick=function(){parent.postMessage({presik:'answer',value:o.id},'*')};r.appendChild(b)})}parent.postMessage({presik:'ready'},'*')<\/script>"
+      },
+      "explain": "The east gate was the only one without a dead end.",
+      "hint": "If many pick north — they missed the map on slide 2."
     }
   ]
 }

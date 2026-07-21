@@ -33,7 +33,8 @@ const readline = require('readline');
 const { spawn, execFileSync } = require('child_process');
 const QRCode = require('qrcode');
 const { openDb } = require('./db');
-const { groupSlug, sessionSlug, toSessionName, parseArgs, bestHostIp, rankHostIps, validateAnswer, splitMarpSlides, deriveMarpMarkdown, normalizeQuiz, CONFIG_FILE } = require('./lib');
+const { groupSlug, sessionSlug, toSessionName, parseArgs, bestHostIp, rankHostIps, effectiveKind, validateAnswer, splitMarpSlides, deriveMarpMarkdown, normalizeQuiz, CONFIG_FILE } = require('./lib');
+const { resolvePackage } = require('./widgets');
 const { readAssetText } = require('./assets');
 const { ensureDeckPdf } = require('./convert');
 const { loadConfig } = require('./config');
@@ -61,7 +62,7 @@ const OPEN_EDITOR = has('edit'); // `presik edit <session>` — bin/cli.js rewri
 // the exact same code works whether it's a single deck at the root, a course
 // with many sessions, or a root holding several courses — it's just a
 // different path depth.
-const SKIP_DIRS = new Set(['node_modules', '.git', '.presik', 'public', 'templates']);
+const SKIP_DIRS = new Set(['node_modules', '.git', '.presik', 'public', 'templates', 'widgets']);
 
 function findSessionDirs(root, depth = 4) {
   const out = [];
@@ -216,6 +217,26 @@ if (!QUESTIONS_EXISTS) {
 // repairs) the file; /api/edit/state, read fresh, still shows what's on disk.
 if (!quiz) quiz = { title: name, questions: [] };
 
+// Widget packages are vendored (offline-first) under <content-root>/widgets/.
+// Resolve every widget.package once so serving is a map lookup, not a disk walk
+// per broadcast. A missing package is fatal at startup (fail fast, like a bad
+// questions.json) but only a note on hot-reload — a typo mid-class mustn't kill
+// a running session.
+const WIDGETS_DIR = path.join(CONTENT_DIR, 'widgets');
+const pkgResolved = {}; // qid -> { dirName, entry, manifest }
+function resolveWidgetPackages(fatal) {
+  for (const q of quiz.questions) {
+    if (q.type !== 'widget' || !q.widget || q.widget.package == null) continue;
+    const r = resolvePackage(WIDGETS_DIR, q.widget.package);
+    if (r) { pkgResolved[q.id] = r; continue; }
+    delete pkgResolved[q.id];
+    const msg = 'Question ' + q.id + ': widget package "' + q.widget.package + '" not found in ' +
+      path.relative(CONTENT_DIR, WIDGETS_DIR) + '\n  Vendor it with:  presik widget add <path-to-built-dist>';
+    if (fatal) fail(msg); else console.error('  Note: ' + msg);
+  }
+}
+resolveWidgetPackages(true);
+
 // ---------------------------------------------------------------- slides (Marp)
 // Slides are the source of truth in deck.marp.md; deck.marp.html is a build
 // artifact the server rebuilds itself whenever the .md is newer than the
@@ -266,6 +287,70 @@ function injectQuizEmbed(htmlPath) {
 // Questions without "correct" — what's safe to show on slides BEFORE reveal
 // (the text/options are already on the slide anyway; correctness is separate,
 // comes from /api/stream, and only after revealed).
+// What the phone needs to render a widget: the answer contract it borrows and
+// how to load its front-end. An inline `srcdoc` game travels as-is; a `src`
+// bundle becomes a URL served (sandboxed) from the session folder. Never leaks
+// `config` secrets? config is author content shown to the student anyway. The
+// options' `correct` flags are NOT here — correctness ships only via /api/stream
+// at reveal, same as every other type.
+function widgetPublic(q) {
+  if (q.type !== 'widget') return undefined;
+  const w = q.widget || {};
+  const out = { height: w.height || null, config: w.config || null, isolate: !!w.isolate };
+  // Every source collapses to what the phone actually needs: inline HTML, or a
+  // URL to load in the sandboxed iframe. A local bundle is served from the
+  // session folder; url/dev point straight at a remote origin (still sandboxed
+  // to a null origin, so it only talks to the quiz over postMessage).
+  if (w.srcdoc != null) out.srcdoc = w.srcdoc;
+  else if (w.src != null) out.src = '/widget/' + w.src.split('/').map(encodeURIComponent).join('/');
+  else if (w.url != null) out.src = w.url;
+  else if (w.dev != null) out.src = w.dev;
+  else if (w.package != null) {
+    const r = pkgResolved[q.id];
+    if (r) {
+      const enc = (s) => s.split('/').map(encodeURIComponent).join('/');
+      out.src = '/widgetpkg/' + enc(r.dirName) + '/' + enc(r.entry);
+      // The manifest supplies defaults the quiz didn't set — height and the
+      // engine's cross-origin-isolation need. The quiz always wins when it does.
+      if (out.height == null && Number.isInteger(r.manifest.height)) out.height = r.manifest.height;
+      if (!out.isolate && r.manifest.isolate) out.isolate = true;
+    } else {
+      out.error = 'Widget package "' + w.package + '" is not installed — run: presik widget add <dist>';
+    }
+  }
+  return out;
+}
+
+const STATIC_TYPES = {
+  '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif', '.webp': 'image/webp', '.avif': 'image/avif', '.css': 'text/css; charset=utf-8',
+  '.js': 'application/javascript; charset=utf-8', '.mjs': 'application/javascript; charset=utf-8',
+  '.json': 'application/json; charset=utf-8', '.html': 'text/html; charset=utf-8',
+  '.woff': 'font/woff', '.woff2': 'font/woff2', '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.ogg': 'audio/ogg',
+  // A widget bundle can be a whole WebGL/engine build. `.wasm` MUST be served as
+  // application/wasm or the browser refuses to streaming-compile it; the rest are
+  // the common 3D/engine asset extensions, so they arrive typed, not as a download.
+  '.wasm': 'application/wasm', '.glb': 'model/gltf-binary', '.gltf': 'model/gltf+json',
+  '.ktx2': 'image/ktx2', '.bin': 'application/octet-stream', '.data': 'application/octet-stream',
+  '.mp4': 'video/mp4', '.webm': 'video/webm',
+};
+// Serve one file resolved strictly inside `root` — the ".." guard is what keeps
+// /slides/, /widget/ and /widgetpkg/ from climbing out into the rest of the disk.
+function serveFileFrom(res, root, encodedRel) {
+  const rel = decodeURIComponent(encodedRel);
+  const filePath = path.join(root, rel);
+  if (filePath !== root && !filePath.startsWith(root + path.sep)) return send(res, 403, 'text/plain; charset=utf-8', 'forbidden');
+  if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
+    const type = STATIC_TYPES[path.extname(filePath).toLowerCase()] || 'application/octet-stream';
+    // A widget runs in a null-origin sandbox, so it fetches its own assets/wasm
+    // cross-origin — allow that (these are public bundle files, no credentials).
+    // CORP lets them still load if the page is ever cross-origin isolated.
+    return send(res, 200, type, fs.readFileSync(filePath), { 'Access-Control-Allow-Origin': '*', 'Cross-Origin-Resource-Policy': 'cross-origin' });
+  }
+  return send(res, 404, 'text/plain; charset=utf-8', 'not found');
+}
+const serveSessionFile = (res, encodedRel) => serveFileFrom(res, SESSION_DIR, encodedRel);
+
 function quizConfig(isHost) {
   return {
     session: name,
@@ -277,6 +362,7 @@ function quizConfig(isHost) {
       text: q.text,
       note: q.note || null,
       type: q.type,
+      answer: q.type === 'widget' ? effectiveKind(q) : undefined,
       options: (q.options || []).map((o) => ({ id: o.id, text: o.text })),
       min: q.min,
       max: q.max,
@@ -454,8 +540,9 @@ const upsertAnswerStmt = db.prepare(`
 
 function persistAnswer(q, clientId, value) {
   if (!runId) return;
+  const kind = effectiveKind(q);
   let isCorrect = null;
-  if (q.type === 'choice') {
+  if (kind === 'choice') {
     const correctIds = (q.options || []).filter((o) => o.correct).map((o) => o.id);
     isCorrect = correctIds.includes(value) ? 1 : 0;
   }
@@ -466,7 +553,9 @@ function persistAnswer(q, clientId, value) {
     group: GROUP || null,
     qid: q.id,
     qtext: q.text,
-    qtype: q.type,
+    // Store the effective kind, not "widget": the archive is about the answer,
+    // so report.js aggregates a choice-widget as choice with zero widget-awareness.
+    qtype: kind,
     clientId,
     value,
     isCorrect,
@@ -482,6 +571,8 @@ function questionFor(isHost) {
   const out = {
     id: q.id,
     type: q.type,
+    answer: q.type === 'widget' ? effectiveKind(q) : undefined,
+    widget: widgetPublic(q),
     text: q.text,
     note: q.note || null,
     options: (q.options || []).map((o) => ({ id: o.id, text: o.text })),
@@ -498,11 +589,12 @@ function questionFor(isHost) {
 function stats(isHost) {
   const q = cur();
   if (!q) return null;
+  const kind = effectiveKind(q); // a widget aggregates as the primitive kind it declares
   const given = answers.get(q.id) || new Map();
   const base = { answered: given.size, connected: students.size };
   if (!isHost && !state.revealed) return base; // students don't see the distribution before reveal
-  if (q.type === 'text') return { ...base, texts: [...given.values()].slice(0, 80) };
-  if (q.type === 'scale') {
+  if (kind === 'text') return { ...base, texts: [...given.values()].slice(0, 80) };
+  if (kind === 'scale') {
     const counts = {};
     for (let i = q.min; i <= q.max; i++) counts[i] = 0;
     for (const v of given.values()) if (counts[v] !== undefined) counts[v]++;
@@ -558,6 +650,7 @@ function broadcast() {
 function reloadQuiz(doc) {
   const wasOn = cur() ? cur().id : null;
   quiz = doc;
+  resolveWidgetPackages(false); // a newly-referenced package may need resolving; missing ones just warn
   const live = new Set(quiz.questions.map((q) => q.id));
   for (const qid of [...answers.keys()]) if (!live.has(qid)) answers.delete(qid);
   // Stay on whatever question the class was looking at, wherever it just moved
@@ -589,8 +682,8 @@ function deckSlideCount() {
 }
 
 // ---------------------------------------------------------------- http
-const send = (res, code, type, body) => {
-  res.writeHead(code, {
+const send = (res, code, type, body, extra) => {
+  res.writeHead(code, Object.assign({
     'Content-Type': type,
     'Cache-Control': 'no-store',
     'X-Content-Type-Options': 'nosniff',
@@ -598,7 +691,7 @@ const send = (res, code, type, body) => {
     // The teacher key rides in the URL (?key=); no-referrer stops it leaking to
     // any third party via the Referer header (e.g. images/CDNs in a slide).
     'Referrer-Policy': 'no-referrer',
-  });
+  }, extra || {}));
   res.end(body);
 };
 // An answer is a few bytes; a whole questions.json is not. The cap stays tight
@@ -647,6 +740,7 @@ const server = http.createServer(async (req, res) => {
   if (p === '/favicon.ico') { res.writeHead(204); return res.end(); }
 
   if (p === '/embed.js') return send(res, 200, 'application/javascript; charset=utf-8', readAssetText('public/embed.js'));
+  if (p === '/widget-sdk.js') return send(res, 200, 'application/javascript; charset=utf-8', readAssetText('public/widget-sdk.js'));
   if (p === '/embed.css') return send(res, 200, 'text/css; charset=utf-8', readAssetText('public/embed.css'));
 
   // Self-hosted pdf.js (no CDN — works offline and inside a CSP).
@@ -684,28 +778,13 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
-  // static files next to the slides (images, join-qr.svg, etc.) — from the session folder
-  if (p.startsWith('/slides/')) {
-    const rel = decodeURIComponent(p.slice('/slides/'.length));
-    const filePath = path.join(SESSION_DIR, rel);
-    if (!filePath.startsWith(SESSION_DIR + path.sep)) return send(res, 403, 'text/plain; charset=utf-8', 'forbidden');
-    if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
-      const type =
-        {
-          '.svg': 'image/svg+xml',
-          '.png': 'image/png',
-          '.jpg': 'image/jpeg',
-          '.jpeg': 'image/jpeg',
-          '.gif': 'image/gif',
-          '.webp': 'image/webp',
-          '.css': 'text/css; charset=utf-8',
-          '.js': 'application/javascript; charset=utf-8',
-          '.html': 'text/html; charset=utf-8',
-        }[path.extname(filePath).toLowerCase()] || 'application/octet-stream';
-      return send(res, 200, type, fs.readFileSync(filePath));
-    }
-    return send(res, 404, 'text/plain; charset=utf-8', 'not found');
-  }
+  // static files next to the slides (images, join-qr.svg, etc.) — from the
+  // session folder. Shared by /slides/ and by /widget/ (a widget question's
+  // `src` bundle): both serve a path resolved strictly inside SESSION_DIR.
+  if (p.startsWith('/slides/')) return serveSessionFile(res, p.slice('/slides/'.length));
+  if (p.startsWith('/widget/')) return serveSessionFile(res, p.slice('/widget/'.length));
+  // Vendored widget packages live at the content root, shared across sessions.
+  if (p.startsWith('/widgetpkg/')) return serveFileFrom(res, WIDGETS_DIR, p.slice('/widgetpkg/'.length));
 
   if (p === '/api/stream') {
     res.writeHead(200, {
@@ -878,7 +957,7 @@ function exportData() {
     questions: quiz.questions.map((q) => {
       const given = [...(answers.get(q.id) || new Map()).values()];
       const row = { id: q.id, type: q.type, text: q.text, answered: given.length };
-      if (q.type === 'text') row.texts = given;
+      if (effectiveKind(q) === 'text') row.texts = given;
       else {
         const counts = {};
         given.forEach((v) => (counts[v] = (counts[v] || 0) + 1));

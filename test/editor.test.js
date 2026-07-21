@@ -30,6 +30,27 @@ test('formatQuestions: the house style — an option stays on one line', () => {
   assert.deepStrictEqual(JSON.parse(out).questions[0].options[1], { id: 'b', text: 'B', correct: true }); // still JSON
 });
 
+test('formatQuestions: a widget question round-trips — nested widget object survives', () => {
+  const q = {
+    id: 'q1', type: 'widget', answer: 'choice', text: 'Escape',
+    options: [{ id: 'north', text: 'North' }, { id: 'east', text: 'East', correct: true }],
+    widget: { srcdoc: '<canvas></canvas>', height: 460, config: { seed: 1 } },
+  };
+  const out = formatQuestions({ title: 'T', questions: [q] });
+  assert.deepStrictEqual(JSON.parse(out).questions[0], q); // nothing lost or reshaped
+  assert.match(out, /^\s+\{ "id": "north", "text": "North" \},$/m); // options keep the house one-per-line style
+});
+
+test('saveQuestions: a valid widget question saves and reloads unchanged', () => {
+  const s = session({ title: 'T', questions: [
+    { id: 'q1', type: 'widget', answer: 'text', text: 'Play', widget: { srcdoc: '<p>game' } },
+  ] });
+  const first = readQuestions(s.file, s.name);
+  const r = saveQuestions({ file: s.file, dataDir: s.dataDir, sessionName: s.name, doc: first.doc, rev: first.rev });
+  assert.ok(r.ok, JSON.stringify(r.errors));
+  assert.deepStrictEqual(onDisk(s).questions[0].widget, { srcdoc: '<p>game' });
+});
+
 test('readQuestions: hands the editor a materialized id to hold on to', () => {
   const s = session({ title: 'T', questions: [{ type: 'text', text: 'one' }] });
   assert.strictEqual(readQuestions(s.file, s.name).doc.questions[0].id, 's01-q1');

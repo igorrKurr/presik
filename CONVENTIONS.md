@@ -72,7 +72,7 @@ A session's deck is `deck.marp.md`, `deck.pdf`, `deck.pptx`, or `deck.key` (prec
   "questions": [
     {
       "id": "optional — generated as <session>-q<N> if omitted",
-      "type": "choice | text | scale",
+      "type": "choice | text | scale | widget",
       "text": "Question text",
       "note": "Clarification under the question (optional)",
       "options": [
@@ -92,7 +92,118 @@ A session's deck is `deck.marp.md`, `deck.pdf`, `deck.pptx`, or `deck.key` (prec
 - **`choice`** — options; more than one can be correct (`"correct": true`). Requires a non-empty `options`.
 - **`text`** — free-form answer (cold open, exit ticket). No `options` needed.
 - **`scale`** — a `min`..`max` scale (typically 1–5). The server computes the average.
+- **`widget`** — an interactive front-end you supply (a richer form, a branching adventure, a small game). It runs **only on the student's phone**, in a sandboxed iframe, and reports **one** answer — see below.
 - **`slide`** — *(PDF decks only)* the 1-based PDF page this question follows: the question and its result are inserted right after that page in the deck sequence. Omit it to keep a question out of the deck flow (still controllable from `/host`). Marp decks ignore `slide` — they place questions with inline markers instead (below).
+
+### `widget` — your own interactive question
+
+A widget supplies its own front-end but **borrows one of the three primitive contracts** for its answer, via `"answer": "choice" | "scale" | "text"`. That's the whole trick: a `choice`-widget is validated, revealed, archived and reported *exactly* like a `choice` question — only the phone runs the interactive part. The projector and `/host` show the ordinary distribution at reveal; nothing else in the engine needs to know a game was involved.
+
+```json
+{
+  "type": "widget",
+  "text": "Escape the dungeon — the gate you leave by is your answer.",
+  "answer": "choice",
+  "options": [
+    { "id": "north", "text": "North gate" },
+    { "id": "east",  "text": "East gate", "correct": true }
+  ],
+  "widget": {
+    "srcdoc": "<!doctype html>… the whole game, inline …",
+    "height": 460,
+    "config": { "seed": 42, "lives": 3 }
+  },
+  "explain": "The east gate was the only safe exit."
+}
+```
+
+- **`answer`** — the primitive kind the reported value is stored and graded as (`choice` needs `options`; `scale` needs `min`/`max`; `text` is free-form). Defaults to `choice`.
+- **`widget.height`** — the iframe height on the phone, in px (80–2000).
+- **`widget.config`** — an optional JSON object handed to the front-end verbatim at start.
+- **`widget.isolate`** — reserved for engines needing cross-origin isolation (threads / `SharedArrayBuffer`); accepted today, full page-level isolation is a follow-up.
+
+**Where the front-end comes from — exactly one of these `widget` keys.** A small thing can be inline; a real game is its own project (its own repo, build, tests, assets) and you reference its build output. All four load into the same sandbox and speak the same protocol — only *where the code lives* differs:
+
+| Key | The front-end is… | Use it when |
+|---|---|---|
+| `srcdoc` | inline HTML, right in `questions.json` | a ≤~20-line form; a throwaway |
+| `src` | a **built bundle** at a relative path in the session folder (e.g. `"widgets/dungeon/index.html"`; can't escape the folder) | the game's `dist/` is vendored into the content — **works fully offline** |
+| `url` | a **self-hosted deployment** (`"https://games.example.edu/dungeon/v3/"`) | the game deploys itself (its own CI → a URL); needs the network in class |
+| `dev` | the game's **dev server** (`"http://localhost:5173"`) | authoring with hot-reload; flip to `src`/`url` for class |
+| `package` | a **vendored widget package** by name (`"dungeon-escape@3"`) | the recommended way to ship a real external game — see "Widget packages" below |
+
+Because presik usually runs on a classroom LAN with no internet, **`src` (a vendored bundle) is the default for anything real** — the built artifact is copied into the content so class never depends on the network. `url` is there for online contexts. A game built with a bundler must emit **relative** asset paths (e.g. Vite `base: './'`) so it resolves when served under `/widget/…`; WebGL/wasm assets are served with correct MIME (`.wasm` → `application/wasm`, `.glb`, `.gltf`, `.ktx2`, …).
+
+**The SDK — so a game never hand-rolls `postMessage`.** presik serves a tiny, dependency-free client at **`/widget-sdk.js`**:
+
+```html
+<script src="/widget-sdk.js"></script>
+<script>
+  const quiz = await PresikWidget.connect();   // does the ready/init handshake
+  quiz.options;                                 // [{id,text?}, …]
+  quiz.config;                                  // author config
+  quiz.answer('east');                          // report the answer (gated server-side)
+  quiz.on('reveal', q => paintWinner(q.correct));
+</script>
+```
+
+A `srcdoc`/`src` widget loads it with `<script src="/widget-sdk.js">`; an **external project** bundles the same file (`import PresikWidget from 'presik-widget'`) so it builds and tests independently. That file also exports **`PresikWidget.mockHost(iframe, …)`** — a fake quiz host, so the game project can assert its integration (`host.answers` ⇢ what it reported) in its own CI, with no presik server involved.
+
+### Widget packages — shipping an independently-built game
+
+A real game is its own project (repo, build, tests, WebGL/wasm assets). You don't paste its code anywhere — you **vendor its build output** into the content, and reference it by name. This keeps the class **fully offline** while the game stays a separate, independently-versioned project.
+
+**1. The game's build emits a `widget.json` manifest** at the root of its `dist/`:
+
+```json
+{
+  "presikWidget": "1",
+  "name": "dungeon-escape", "version": "3.2.0",
+  "entry": "index.html",
+  "answer": "choice",
+  "options": [{ "id": "north" }, { "id": "east" }],
+  "height": 480,
+  "isolate": false
+}
+```
+
+The manifest declares the answer contract and the **outcome ids the game can emit**; the quiz supplies the human labels and which is `correct`. `entry`/`height`/`isolate` become defaults the quiz inherits. (Build with **relative** asset paths — e.g. Vite `base: './'` — so assets resolve when served under `/widgetpkg/…`.)
+
+**2. Vendor it once, with the CLI:**
+
+```bash
+presik widget add ../dungeon/dist         # copies dist → ./widgets/dungeon-escape@3.2.0/ (offline-ready)
+presik widget add ../dungeon/dist --force  # overwrite an existing version
+presik widget ls                            # list vendored packages
+```
+
+`add` reads the manifest for the name/version, copies the folder under `<content-root>/widgets/`, and prints the question snippet to paste.
+
+**3. Reference it by name** (an exact version, a major range like `@3`, or bare name for the highest):
+
+```json
+{
+  "type": "widget", "text": "Escape the dungeon.",
+  "answer": "choice",
+  "options": [{ "id": "north", "text": "North gate" }, { "id": "east", "text": "East gate", "correct": true }],
+  "widget": { "package": "dungeon-escape@3", "config": { "seed": 42 } }
+}
+```
+
+The server resolves the package at startup (a missing one refuses to launch — fail fast, not mid-class), serves it under `/widgetpkg/<name>@<version>/`, and — because a sandboxed widget runs at a **null origin** — serves its assets with `Access-Control-Allow-Origin: *` so the game can `fetch()` its own assets and wasm. Vendored packages live at the **content root** (`widgets/`), shared across every session, and are skipped by session discovery.
+
+**The bridge (`postMessage`).** The sandboxed front-end and the student page speak a tiny protocol. The front-end has no access to the page, its storage, or the session — it can only send messages:
+
+| Direction | Message | Meaning |
+|---|---|---|
+| widget → page | `{ presik: "ready" }` | booted; asks for its config + current state |
+| page → widget | `{ presik: "init", answer, options, min, max, text, note, config, revealed, value, correct }` | sent once, in reply to `ready` |
+| widget → page | `{ presik: "answer", value }` | the student's answer (an option `id`, a number, or text) |
+| page → widget | `{ presik: "state", revealed, value, correct }` | reveal / value updates thereafter |
+
+The reported `value` still passes through the **same validator** as a tapped button — a widget can only ever submit a *legal* answer for its declared kind, so untrusted front-end code can't stuff the archive. A minimal working widget (which the `/edit` "Widget" type seeds for you, and which doubles as the reference implementation) is ~20 lines: listen for `init`, draw the options, `postMessage` an `answer` on tap.
+
+Because it's all just fields in `questions.json`, a widget is fully hand-authorable — `srcdoc`, `answer`, `options`, `config` and all — with no editor round-trip required. The `/edit` "Widget" card is a convenience over these same keys.
 
 The file is validated at server startup — a JSON error or a malformed question stops the launch immediately, not in the middle of class. `presik new <session>` scaffolds a starting `questions.json` (and `deck.marp.md`, unless `--questions-only`) from `templates/` for you — see below.
 

@@ -85,9 +85,12 @@
     var html = '<div class="quiz-slide quiz-reveal-slide' + (revealed ? '' : ' quiz-pending') + '">';
     html += '<div class="quiz-kicker">Result</div>';
     html += '<div class="quiz-question-text">' + esc(qdef.text) + '</div>';
+    // A widget reveals as the primitive kind it declared — a choice-widget shows
+    // the same option distribution a plain choice question would.
+    var kind = qdef.type === 'widget' ? (qdef.answer || 'choice') : qdef.type;
     if (!revealed) {
       html += '<div class="quiz-cta quiz-muted">Coming up</div>';
-    } else if (qdef.type === 'choice') {
+    } else if (kind === 'choice') {
       var counts = st.counts || {};
       var total = Object.keys(counts).reduce(function (a, k) { return a + counts[k]; }, 0) || 1;
       var correctIds = last.question.correct || [];
@@ -107,7 +110,7 @@
           })
           .join('') +
         '</div>';
-    } else if (qdef.type === 'scale') {
+    } else if (kind === 'scale') {
       var counts2 = st.counts || {};
       var keys = Object.keys(counts2);
       var maxc = Math.max.apply(null, [1].concat(keys.map(function (k) { return counts2[k]; })));
@@ -122,7 +125,7 @@
           .join('') +
         '</div>' +
         (st.avg ? '<div class="quiz-note">Average: ' + esc(st.avg) + '</div>' : '');
-    } else if (qdef.type === 'text') {
+    } else if (kind === 'text') {
       var texts = st.texts || [];
       html +=
         '<div class="quiz-texts">' +

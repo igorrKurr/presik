@@ -12,10 +12,35 @@
     { id: 'choice', label: 'Choice', blurb: 'Tap ✓ to mark the correct answer — more than one can be correct.' },
     { id: 'text', label: 'Text', blurb: 'A free-form answer: cold opens, exit tickets.' },
     { id: 'scale', label: 'Scale', blurb: 'A range, e.g. confidence 1–5. The result shows the average.' },
+    { id: 'widget', label: 'Widget', blurb: 'An interactive front-end (a form, a game…) that reports one answer. Author its data here; build the front-end as raw HTML in the box below.' },
   ];
+  const ANSWER_KINDS = [['choice', 'Choice'], ['scale', 'Scale'], ['text', 'Text']];
+  const WIDGET_SOURCES = ['srcdoc', 'src', 'url', 'dev']; // mirrors lib.js — one of these per widget
   // Canonical key order, so a question the editor writes reads like one a person
   // wrote — questions.json stays a file you diff and hand-edit (CONVENTIONS.md).
-  const ORDER = ['id', 'type', 'text', 'note', 'options', 'min', 'max', 'slide', 'explain', 'hint'];
+  const ORDER = ['id', 'type', 'answer', 'text', 'note', 'options', 'min', 'max', 'widget', 'slide', 'explain', 'hint'];
+
+  // A working default widget: it renders the choice options as buttons, reports
+  // the tapped one, and greens the correct one after reveal. It doubles as the
+  // reference for the postMessage contract — copy it, then make it a real game.
+  const STARTER_SRCDOC = [
+    '<!doctype html><meta charset="utf-8">',
+    '<style>body{margin:0;font:16px system-ui;background:#1b2634;color:#f1f5f9;padding:16px}',
+    'button{display:block;width:100%;margin:0 0 8px;padding:14px;border-radius:10px;border:1px solid #223041;background:#10161f;color:inherit;font:inherit;text-align:left;cursor:pointer}',
+    'button.correct{border-color:#4ade80}</style>',
+    '<div id="root">Loading…</div>',
+    '<script>',
+    'var Q=null;',
+    'onmessage=function(e){var d=e.data||{};',
+    ' if(d.presik==="init"){Q=d;draw();}',
+    ' if(d.presik==="state"&&Q){Q.revealed=d.revealed;Q.correct=d.correct;draw();}};',
+    'function draw(){var r=document.getElementById("root");r.innerHTML="";',
+    ' (Q.options||[]).forEach(function(o){var b=document.createElement("button");b.textContent=o.text||o.id;',
+    '  if(Q.revealed&&Q.correct&&Q.correct.indexOf(o.id)>=0)b.className="correct";',
+    '  b.onclick=function(){parent.postMessage({presik:"answer",value:o.id},"*");};r.appendChild(b);});}',
+    'parent.postMessage({presik:"ready"},"*");',
+    '</scr' + 'ipt>',
+  ].join('\n');
 
   let ctx, store, list, openIdx = 0, dragFrom = null, wantFocus = false;
 
@@ -114,6 +139,68 @@
       if (q.min == null) q.min = 1;
       if (q.max == null) q.max = 5;
     }
+    if (type === 'widget') {
+      if (q.answer == null) q.answer = 'choice';
+      seedAnswerKind(q, q.answer);
+      if (q.widget == null) q.widget = { srcdoc: STARTER_SRCDOC };
+    }
+    commit(true);
+  }
+  // The fields the borrowed answer kind needs to be valid — shared by switching
+  // to a widget and by switching a widget's answer kind.
+  function seedAnswerKind(q, kind) {
+    if (kind === 'choice' && !(q.options || []).length) q.options = [{ id: 'a', text: '' }, { id: 'b', text: '' }];
+    if (kind === 'scale') { if (q.min == null) q.min = 1; if (q.max == null) q.max = 5; }
+  }
+  function setAnswerKind(i, kind) {
+    const q = store.doc.questions[i];
+    if ((q.answer || 'choice') === kind) return;
+    ctx.pushUndo('widget answer kind', store);
+    q.answer = kind;
+    seedAnswerKind(q, kind);
+    commit(true);
+  }
+  // A keystroke inside the srcdoc/src field: mutate in place, no re-render (it
+  // would eat the cursor), same as editing question text.
+  function widgetField(i, k, v) {
+    const q = store.doc.questions[i];
+    q.widget = q.widget || {};
+    q.widget[k] = v;
+    commitAt(i, false);
+  }
+  function widgetMode(w) { return WIDGET_SOURCES.find((k) => w && w[k] != null) || 'srcdoc'; }
+  function setWidgetMode(i, mode) {
+    const q = store.doc.questions[i];
+    const w = (q.widget = q.widget || {});
+    if (widgetMode(w) === mode) return;
+    ctx.pushUndo('widget source', store);
+    WIDGET_SOURCES.forEach((k) => { if (k !== mode) delete w[k]; }); // one source at a time
+    if (w[mode] == null) w[mode] = mode === 'srcdoc' ? STARTER_SRCDOC : '';
+    commit(true);
+  }
+  function setWidgetHeight(i, raw) {
+    const q = store.doc.questions[i];
+    const w = (q.widget = q.widget || {});
+    ctx.pushUndo('widget height', store);
+    if (!String(raw).trim()) delete w.height;
+    else {
+      const n = parseInt(raw, 10);
+      if (!Number.isInteger(n) || n < 80 || n > 2000) { ctx.toast('Height must be between 80 and 2000 px.'); return render(store.doc); }
+      w.height = n;
+    }
+    commit(true);
+  }
+  function setWidgetConfig(i, raw) {
+    const q = store.doc.questions[i];
+    const w = (q.widget = q.widget || {});
+    const t = String(raw).trim();
+    let val;
+    if (t) {
+      try { val = JSON.parse(t); } catch (_) { ctx.toast('Config has to be valid JSON.'); return render(store.doc); }
+      if (val == null || typeof val !== 'object' || Array.isArray(val)) { ctx.toast('Config must be a JSON object, e.g. { "level": 2 }.'); return render(store.doc); }
+    }
+    ctx.pushUndo('widget config', store);
+    if (val === undefined) delete w.config; else w.config = val;
     commit(true);
   }
   function setScale(i, k, raw) {
@@ -171,7 +258,8 @@
   // ---------------------------------------------------------------- render
   function summaryOf(q) {
     const bits = [];
-    if (q.type === 'choice') bits.push((q.options || []).length + ' options');
+    if (q.type === 'widget') bits.push('widget · answers as ' + (q.answer || 'choice'));
+    else if (q.type === 'choice') bits.push((q.options || []).length + ' options');
     else if (q.type === 'scale') bits.push('scale ' + q.min + '–' + q.max);
     else bits.push('free text');
     bits.push(q.slide ? 'after slide ' + q.slide : 'not in the deck');
@@ -256,6 +344,54 @@
     );
   }
 
+  // The widget's data contract: which primitive kind its answer is stored and
+  // graded as. Choosing "choice" reuses the very same option rows (with the ✓
+  // correct toggle) a plain choice question has — so a game's outcomes are
+  // authored exactly like ordinary answers.
+  function answerKindPicker(q, i) {
+    return el(
+      'div',
+      { class: 'row' },
+      el('span', { class: 'lbl', text: 'Answer stored as' }),
+      el('div', { class: 'seg' }, ANSWER_KINDS.map(([id, label]) =>
+        el('button', { class: (q.answer || 'choice') === id ? 'on' : '', text: label, onClick: () => setAnswerKind(i, id) })))
+    );
+  }
+  const WIDGET_MODES = [
+    ['srcdoc', 'Inline HTML', '<!doctype html> … your interactive question'],
+    ['src', 'Bundle file', 'widgets/game/index.html'],
+    ['url', 'URL', 'https://games.example.edu/dungeon/v3/'],
+    ['dev', 'Dev server', 'http://localhost:5173'],
+  ];
+  const WIDGET_MODE_HINT = {
+    srcdoc: 'Inline HTML — fine for a small form; a big game belongs in a bundle, URL, or dev server.',
+    src: 'A built bundle in the session folder — copy your game’s dist/ here (works fully offline).',
+    url: 'A self-hosted deployment — the game builds and deploys on its own; needs the network in class.',
+    dev: 'Your game’s dev server — hot-reload while authoring, then switch to a bundle or URL for class.',
+  };
+  function widgetEditor(q, i) {
+    const w = q.widget || {};
+    const mode = widgetMode(w);
+    const seg = el('div', { class: 'seg' }, WIDGET_MODES.map(([id, label]) =>
+      el('button', { class: id === mode ? 'on' : '', text: label, onClick: () => setWidgetMode(i, id) })));
+    const height = el('input', { class: 'num', type: 'number', placeholder: '420', value: w.height != null ? String(w.height) : '', onChange: (e) => setWidgetHeight(i, e.target.value) });
+    const ph = (WIDGET_MODES.find(([id]) => id === mode) || [])[2] || '';
+    const source = mode === 'srcdoc'
+      ? el('textarea', { class: 'field mono', rows: 8, placeholder: ph, text: w.srcdoc || '', onInput: (e) => { widgetField(i, 'srcdoc', e.target.value); grow(e.target); } })
+      : el('input', { class: 'field mono', value: w[mode] || '', placeholder: ph, onInput: (e) => widgetField(i, mode, e.target.value) });
+    return el(
+      'div',
+      { class: 'extras' },
+      el('label', { class: 'extra-lbl', text: 'Widget front-end — talks to the quiz over postMessage (see /widget-sdk.js)' }),
+      el('div', { class: 'row' }, seg, el('span', { class: 'lbl', text: 'height' }), height),
+      source,
+      el('div', { class: 'hintline', text: WIDGET_MODE_HINT[mode] }),
+      el('label', { class: 'extra-lbl', text: 'Config (optional) — JSON handed to the widget at start' }),
+      el('textarea', { class: 'field mono', rows: 2, placeholder: '{ }', text: w.config ? JSON.stringify(w.config) : '', onChange: (e) => setWidgetConfig(i, e.target.value) }),
+      el('div', { class: 'hintline', text: 'It reports one value; it’s validated as the answer kind above, then revealed and archived like any answer of that kind.' })
+    );
+  }
+
   function area(q, i, key, placeholder, cls) {
     return el('textarea', {
       class: 'field ' + (cls || ''),
@@ -317,7 +453,14 @@
     );
     if (q.type === 'choice') b.append(options(q, i));
     else if (q.type === 'scale') b.append(scale(q, i));
-    else b.append(el('div', { class: 'text-prev', text: 'Students type an answer on their phone.' }));
+    else if (q.type === 'widget') {
+      const kind = q.answer || 'choice';
+      b.append(answerKindPicker(q, i));
+      if (kind === 'choice') b.append(options(q, i));
+      else if (kind === 'scale') b.append(scale(q, i));
+      else b.append(el('div', { class: 'text-prev', text: 'The widget collects a free-text answer.' }));
+      b.append(widgetEditor(q, i));
+    } else b.append(el('div', { class: 'text-prev', text: 'Students type an answer on their phone.' }));
 
     b.append(
       el(

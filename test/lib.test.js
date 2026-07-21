@@ -1,6 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert');
-const { validateAnswer, groupSlug, sessionSlug, parseArgs, rankHostIps, bestHostIp, toSessionName, buildDeckSteps, splitMarpSlides, deriveMarpMarkdown, pickConverters, normalizeQuiz, validateConfigObject, mergeConfig, historyToPrune } = require('../lib');
+const { parsePackageRef, versionSatisfies, pickPackageDir } = require('../widgets');
+const { validateAnswer, effectiveKind, isSafeWidgetSrc, isRemoteWidgetUrl, isPackageRef, groupSlug, sessionSlug, parseArgs, rankHostIps, bestHostIp, toSessionName, buildDeckSteps, splitMarpSlides, deriveMarpMarkdown, pickConverters, normalizeQuiz, validateConfigObject, mergeConfig, historyToPrune } = require('../lib');
 
 test('validateAnswer: choice accepts only real option ids', () => {
   const q = { type: 'choice', options: [{ id: 'a' }, { id: 'b' }] };
@@ -28,6 +29,103 @@ test('validateAnswer: text trims, rejects empty, caps length', () => {
   assert.strictEqual(validateAnswer(q, '  hi  '), 'hi');
   assert.strictEqual(validateAnswer(q, '   '), null);
   assert.strictEqual(validateAnswer(q, 'x'.repeat(1000)).length, 600);
+});
+
+test('validateAnswer: a widget answers to its declared kind, not to "widget"', () => {
+  // choice-widget — the sandboxed game can only report a legal option id
+  const wc = { type: 'widget', answer: 'choice', options: [{ id: 'north' }, { id: 'east' }] };
+  assert.strictEqual(validateAnswer(wc, 'east'), 'east');
+  assert.strictEqual(validateAnswer(wc, 'cheat'), null); // game can't stuff junk past the gate
+  // scale-widget — same numeric range gate as a plain scale
+  const ws = { type: 'widget', answer: 'scale', min: 0, max: 3 };
+  assert.strictEqual(validateAnswer(ws, '2'), '2');
+  assert.strictEqual(validateAnswer(ws, '9'), null);
+  // no explicit answer defaults to choice
+  assert.strictEqual(effectiveKind({ type: 'widget' }), 'choice');
+  assert.strictEqual(effectiveKind({ type: 'scale' }), 'scale');
+});
+
+test('isSafeWidgetSrc: only a relative path that stays inside the session folder', () => {
+  assert.ok(isSafeWidgetSrc('widgets/dungeon/index.html'));
+  assert.ok(isSafeWidgetSrc('game.html'));
+  assert.ok(!isSafeWidgetSrc('../secrets.json'));
+  assert.ok(!isSafeWidgetSrc('/etc/passwd'));
+  assert.ok(!isSafeWidgetSrc('https://evil.example/x'));
+  assert.ok(!isSafeWidgetSrc('a/../../b'));
+  assert.ok(!isSafeWidgetSrc(''));
+});
+
+test('isRemoteWidgetUrl: only absolute http(s) URLs', () => {
+  assert.ok(isRemoteWidgetUrl('https://games.example.edu/dungeon/v3/'));
+  assert.ok(isRemoteWidgetUrl('http://localhost:5173'));
+  assert.ok(!isRemoteWidgetUrl('widgets/game/index.html'));
+  assert.ok(!isRemoteWidgetUrl('ftp://x/y'));
+  assert.ok(!isRemoteWidgetUrl('javascript:alert(1)'));
+  assert.ok(!isRemoteWidgetUrl(''));
+});
+
+test('isPackageRef: a name or name@version, never a path', () => {
+  assert.ok(isPackageRef('dungeon-escape'));
+  assert.ok(isPackageRef('dungeon-escape@3'));
+  assert.ok(isPackageRef('dungeon_escape@3.2.0-beta.1'));
+  assert.ok(!isPackageRef('../x'));
+  assert.ok(!isPackageRef('a/b'));
+  assert.ok(!isPackageRef('has..dots'));
+  assert.ok(!isPackageRef(''));
+});
+
+test('widget packages: ref parsing + version resolution picks the highest match', () => {
+  assert.deepStrictEqual(parsePackageRef('game@3.2.0'), { name: 'game', version: '3.2.0' });
+  assert.deepStrictEqual(parsePackageRef('game'), { name: 'game', version: null });
+  // prefix satisfaction: "3" and "3.2" are ranges, an exact version matches itself
+  assert.ok(versionSatisfies('3.2.0', '3'));
+  assert.ok(versionSatisfies('3.2.0', '3.2'));
+  assert.ok(!versionSatisfies('30.0.0', '3'));
+  assert.ok(versionSatisfies('3.2.0', null));
+  const dirs = ['game@3.1.0', 'game@3.2.5', 'game@2.9.0', 'other@1.0.0'];
+  assert.strictEqual(pickPackageDir(dirs, 'game'), 'game@3.2.5');       // highest overall
+  assert.strictEqual(pickPackageDir(dirs, 'game@3'), 'game@3.2.5');      // highest under 3
+  assert.strictEqual(pickPackageDir(dirs, 'game@3.1.0'), 'game@3.1.0');  // exact
+  assert.strictEqual(pickPackageDir(dirs, 'game@9'), null);              // nothing satisfies
+  assert.strictEqual(pickPackageDir(dirs, 'missing'), null);
+});
+
+test('normalizeQuiz: a widget can be sourced from a vendored package', () => {
+  const err = normalizeQuiz({ questions: [{ type: 'widget', text: 'a', answer: 'choice',
+    options: [{ id: 'east', text: 'E', correct: true }], widget: { package: 'dungeon-escape@3' } }] }, 's01').errors;
+  assert.deepStrictEqual(err, []);
+  const bad = normalizeQuiz({ questions: [{ type: 'widget', text: 'a', answer: 'text', widget: { package: '../evil' } }] }, 's01').errors;
+  assert.match(bad.join(' '), /"package" must be a name or name@version/);
+});
+
+test('normalizeQuiz: a valid widget passes, borrowing its answer kind for grading', () => {
+  const r = normalizeQuiz({ questions: [{
+    type: 'widget', text: 'Escape', answer: 'choice',
+    options: [{ id: 'north', text: 'North' }, { id: 'east', text: 'East', correct: true }],
+    widget: { srcdoc: '<canvas></canvas>', height: 460, config: { seed: 1 } },
+  }] }, 's01');
+  assert.deepStrictEqual(r.errors, []);
+  assert.strictEqual(r.quiz.questions[0].answer, 'choice');
+});
+
+test('normalizeQuiz: widget errors on what would actually break a class', () => {
+  const err = (q) => normalizeQuiz({ questions: [].concat(q) }, 's01').errors.join(' | ');
+  assert.match(err({ type: 'widget', text: 'a', widget: { srcdoc: 'x' }, answer: 'bogus' }), /answer.*must be one of/);
+  assert.match(err({ type: 'widget', text: 'a', answer: 'choice', widget: { srcdoc: 'x' } }), /answer=choice.*no options/);
+  assert.match(err({ type: 'widget', text: 'a', answer: 'text' }), /needs a "widget" object/);
+  assert.match(err({ type: 'widget', text: 'a', answer: 'text', widget: {} }), /needs one of srcdoc, src, url, dev/);
+  assert.match(err({ type: 'widget', text: 'a', answer: 'text', widget: { srcdoc: 'x', src: 'y.html' } }), /more than one source/);
+  assert.match(err({ type: 'widget', text: 'a', answer: 'text', widget: { src: '../x.html' } }), /must be a relative path/);
+  assert.match(err({ type: 'widget', text: 'a', answer: 'text', widget: { url: 'not-a-url' } }), /"url" must be an absolute http/);
+  assert.match(err({ type: 'widget', text: 'a', answer: 'text', widget: { dev: 'ftp://x' } }), /"dev" must be an absolute http/);
+  assert.match(err({ type: 'widget', text: 'a', answer: 'text', widget: { srcdoc: 'x', isolate: 'yes' } }), /"isolate" must be true or false/);
+  assert.match(err({ type: 'widget', text: 'a', answer: 'text', widget: { srcdoc: 'x', height: 99999 } }), /"height" must be between/);
+  // each source is valid on its own
+  const ok = (w) => normalizeQuiz({ questions: [{ type: 'widget', text: 'a', answer: 'text', widget: w }] }, 's01').errors;
+  assert.deepStrictEqual(ok({ srcdoc: '<p>x' }), []);
+  assert.deepStrictEqual(ok({ src: 'widgets/g/index.html' }), []);
+  assert.deepStrictEqual(ok({ url: 'https://games.example.edu/dungeon/v3/' }), []);
+  assert.deepStrictEqual(ok({ dev: 'http://localhost:5173', isolate: true }), []);
 });
 
 test('groupSlug: filename-safe, capped, nullable', () => {

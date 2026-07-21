@@ -83,9 +83,10 @@
     const revealed = last && last.revealed && last.question && last.question.id === q.id;
     let h = '<div class="quiz-slide quiz-reveal-slide"><div class="quiz-kicker">Result</div>';
     h += '<div class="quiz-question-text">' + esc(q.text) + '</div>';
+    const kind = q.type === 'widget' ? (q.answer || 'choice') : q.type; // a widget reveals as its declared kind
     if (!revealed) {
       h += '<div class="quiz-cta quiz-muted">Revealing…</div>';
-    } else if (q.type === 'choice') {
+    } else if (kind === 'choice') {
       const counts = st.counts || {}, total = Object.keys(counts).reduce((a, k) => a + counts[k], 0) || 1;
       const correct = (last.question.correct) || [];
       h += '<div class="quiz-opts">' + q.options.map(o => {
@@ -93,7 +94,7 @@
         return '<div class="quiz-opt' + (ok ? ' quiz-correct' : '') + '"><div class="quiz-opt-row"><span>' +
           esc(o.text) + '</span><span>' + c + ' · ' + pct + '%</span></div>' + bar(pct) + '</div>';
       }).join('') + '</div>';
-    } else if (q.type === 'scale') {
+    } else if (kind === 'scale') {
       const counts = st.counts || {}, keys = Object.keys(counts);
       const maxc = Math.max.apply(null, [1].concat(keys.map(k => counts[k])));
       h += '<div class="quiz-opts">' + keys.map(k => {

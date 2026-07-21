@@ -84,23 +84,37 @@ function bestHostIp(interfaces) {
   return c.length ? c[0].address : 'localhost';
 }
 
+// The data contract a question answers to. A `widget` question supplies its own
+// interactive front-end (a form, a canvas game…) but stores, validates, reveals
+// and archives its answer as one of the three primitive kinds it declares via
+// `answer`. Everywhere the engine used to branch on `q.type === 'choice'|…`, it
+// branches on effectiveKind instead — so a choice-widget is graded, aggregated
+// and reported exactly like a choice question, and only the phone runs the game.
+function effectiveKind(q) {
+  if (q == null) return null;
+  return q.type === 'widget' ? q.answer || 'choice' : q.type;
+}
+
 // A student answer is only accepted if it's actually a legal answer to the
 // current question — otherwise a hand-crafted POST could stuff the archive
-// with junk values (counted in the DB, invisible in the distribution).
+// with junk values (counted in the DB, invisible in the distribution). For a
+// widget this is also the trust boundary: the sandboxed game can only ever
+// report a value, and that value has to survive this gate like any tapped one.
 // Returns the normalized value to store, or null to reject.
 function validateAnswer(q, rawValue) {
   if (q == null) return null;
   const value = String(rawValue == null ? '' : rawValue);
-  if (q.type === 'choice') {
+  const kind = effectiveKind(q);
+  if (kind === 'choice') {
     const ids = (q.options || []).map((o) => o.id);
     return ids.includes(value) ? value : null;
   }
-  if (q.type === 'scale') {
+  if (kind === 'scale') {
     if (!/^-?\d+$/.test(value.trim())) return null;
     const n = parseInt(value, 10);
     return n >= q.min && n <= q.max ? String(n) : null;
   }
-  if (q.type === 'text') {
+  if (kind === 'text') {
     const t = value.trim();
     return t.length ? t.slice(0, 600) : null;
   }
@@ -209,12 +223,82 @@ function buildDeckSteps(numPages, questions) {
 // you type: a half-written question is normal for a few seconds and mustn't fail
 // the save, while a duplicate id or an option-less choice question is broken in
 // a way that would break class.
-const QUESTION_TYPES = ['choice', 'text', 'scale'];
+const QUESTION_TYPES = ['choice', 'text', 'scale', 'widget'];
+// The three primitive data contracts a `widget` may declare via `answer` — the
+// same kinds that exist as standalone types. A widget can't invent a fourth: its
+// answer must reduce to something stats(), the archive and report.js understand.
+const ANSWER_KINDS = ['choice', 'text', 'scale'];
+// A widget's height on the phone, in CSS px. Clamped so a typo can't hand the
+// student a 50,000px iframe (or a 1px one that hides the game).
+const WIDGET_MIN_HEIGHT = 80;
+const WIDGET_MAX_HEIGHT = 2000;
+// A `src` bundle is resolved *inside* the session folder and served from there.
+// Reject anything that could climb out of it (absolute paths, ".." segments,
+// backslashes, URLs) before it ever reaches the filesystem or an <iframe>.
+function isSafeWidgetSrc(src) {
+  if (typeof src !== 'string' || !src.trim()) return false;
+  if (/^[a-z][a-z0-9+.-]*:/i.test(src) || src.startsWith('//')) return false; // no scheme, no protocol-relative
+  if (src.startsWith('/') || src.startsWith('\\') || src.includes('\\')) return false;
+  return !src.split('/').some((seg) => seg === '..' || seg === '.');
+}
+// A `url` (self-hosted deployment) or `dev` (the game's dev server, for authoring
+// with hot-reload) points the sandboxed iframe at a remote origin. Only http(s)
+// absolute URLs — the iframe still runs at a null origin, so the remote page gets
+// no cookies/storage of its own and talks to the quiz only over postMessage.
+function isRemoteWidgetUrl(u) {
+  if (typeof u !== 'string' || !u.trim()) return false;
+  let parsed;
+  try { parsed = new URL(u); } catch (_) { return false; }
+  return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+}
+// A `package` ref names a vendored widget package ("name" or "name@version")
+// under <content-root>/widgets/. Only a bare name + optional version — never a
+// path — so it can't point outside the widgets folder.
+function isPackageRef(ref) {
+  if (typeof ref !== 'string' || !ref.trim()) return false;
+  if (ref.includes('/') || ref.includes('\\') || ref.includes('..')) return false;
+  return /^[a-z0-9][a-z0-9._-]*(@[0-9][0-9a-z.+-]*)?$/i.test(ref);
+}
+// The one-of source keys a widget descriptor may carry — checked as a group so
+// exactly one wins. srcdoc = inline HTML; src = a built bundle in the session;
+// url = a self-hosted deployment; dev = a dev server (authoring only);
+// package = a vendored widget package resolved from <content-root>/widgets/.
+const WIDGET_SOURCES = ['srcdoc', 'src', 'url', 'dev', 'package'];
 // A scale is a row of buttons the class taps, not a number-entry box. Cap the
 // span so a typo like "max": 2026 can't make stats() allocate a giant counts
 // object on every broadcast (and every phone paint thousands of buttons). The
 // editor's own preview stops at ~40 buttons for the same reason.
 const SCALE_MAX_STEPS = 100;
+
+// Validate the `widget` descriptor of a widget question in place. The front-end
+// is either inline HTML (`srcdoc` — the whole game lives in questions.json) or a
+// bundle file in the session folder (`src`); exactly one, and a `src` must stay
+// inside the folder. `config` is opaque author data handed to the game at init.
+function validateWidget(q, errors) {
+  const w = q.widget;
+  if (w == null || typeof w !== 'object' || Array.isArray(w)) {
+    errors.push('Question ' + q.id + ': widget type needs a "widget" object ({ "srcdoc": "…" }, { "src": "file.html" }, { "url": "https://…" } or { "dev": "http://localhost:5173" })');
+    return;
+  }
+  // Exactly one source. srcdoc/src/url/dev are alternatives, not a fallback
+  // chain — two would be ambiguous about which the phone loads.
+  const present = WIDGET_SOURCES.filter((k) => w[k] != null);
+  if (present.length === 0) errors.push('Question ' + q.id + ': widget needs one of ' + WIDGET_SOURCES.join(', ') + ' (inline HTML, a bundle file, a URL, or a dev server)');
+  else if (present.length > 1) errors.push('Question ' + q.id + ': widget has more than one source (' + present.join(', ') + ') — use exactly one');
+  if (w.srcdoc != null && (typeof w.srcdoc !== 'string' || !w.srcdoc.trim())) errors.push('Question ' + q.id + ': widget "srcdoc" must be non-empty HTML');
+  if (w.src != null && !isSafeWidgetSrc(w.src)) errors.push('Question ' + q.id + ': widget "src" must be a relative path inside the session folder (no "..", no URL)');
+  if (w.url != null && !isRemoteWidgetUrl(w.url)) errors.push('Question ' + q.id + ': widget "url" must be an absolute http(s) URL');
+  if (w.dev != null && !isRemoteWidgetUrl(w.dev)) errors.push('Question ' + q.id + ': widget "dev" must be an absolute http(s) URL (e.g. http://localhost:5173)');
+  if (w.package != null && !isPackageRef(w.package)) errors.push('Question ' + q.id + ': widget "package" must be a name or name@version (e.g. "dungeon-escape@3"), no paths');
+  if (w.height != null) {
+    if (!Number.isInteger(w.height)) errors.push('Question ' + q.id + ': widget "height" must be a whole number of pixels');
+    else if (w.height < WIDGET_MIN_HEIGHT || w.height > WIDGET_MAX_HEIGHT)
+      errors.push('Question ' + q.id + ': widget "height" must be between ' + WIDGET_MIN_HEIGHT + ' and ' + WIDGET_MAX_HEIGHT + ' px');
+  }
+  if (w.isolate != null && typeof w.isolate !== 'boolean') errors.push('Question ' + q.id + ': widget "isolate" must be true or false');
+  if (w.config != null && (typeof w.config !== 'object' || Array.isArray(w.config)))
+    errors.push('Question ' + q.id + ': widget "config" must be a JSON object');
+}
 
 function normalizeQuiz(raw, sessionName) {
   const errors = [];
@@ -244,6 +328,17 @@ function normalizeQuiz(raw, sessionName) {
     }
     if (!String(q.text == null ? '' : q.text).trim()) warnings.push('Question ' + q.id + ': no question text yet');
 
+    // A widget declares which primitive contract its answer reduces to; the
+    // options/scale checks below then run against that borrowed kind, so a
+    // choice-widget is validated (and later graded) like a choice question.
+    if (t === 'widget') {
+      if (q.answer == null) q.answer = 'choice';
+      if (!ANSWER_KINDS.includes(q.answer))
+        errors.push('Question ' + q.id + ': widget "answer" must be one of ' + ANSWER_KINDS.join(', '));
+      validateWidget(q, errors);
+    }
+    const kind = effectiveKind(q);
+
     // Options are normalized whenever they're present, not just for choice —
     // switching a question to text in the editor leaves them in place, so
     // switching back doesn't lose the answers you already typed.
@@ -264,10 +359,10 @@ function normalizeQuiz(raw, sessionName) {
         });
       }
     }
-    if (t === 'choice' && !(Array.isArray(q.options) ? q.options : []).length)
-      errors.push('Question ' + q.id + ': type=choice but has no options');
+    if (kind === 'choice' && !(Array.isArray(q.options) ? q.options : []).length)
+      errors.push('Question ' + q.id + ': ' + (t === 'widget' ? 'widget answer=choice' : 'type=choice') + ' but has no options');
 
-    if (t === 'scale') {
+    if (kind === 'scale') {
       // `== null` rather than `||` so a 0-based scale (0..10) survives.
       if (q.min == null) q.min = 1;
       if (q.max == null) q.max = 5;
@@ -352,4 +447,4 @@ function historyToPrune(names, max) {
   return sorted.slice(0, Math.max(0, sorted.length - max));
 }
 
-module.exports = { toSessionName, sessionSlug, parseArgs, groupSlug, rankHostIps, bestHostIp, isPrivateV4, validateAnswer, buildDeckSteps, splitMarpSlides, deriveMarpMarkdown, pickConverters, normalizeQuiz, validateConfigObject, mergeConfig, historyToPrune, CONFIG_FILE, CONFIG_SPEC, QUESTION_TYPES, SCALE_MAX_STEPS, VIRTUAL_IFACE };
+module.exports = { toSessionName, sessionSlug, parseArgs, groupSlug, rankHostIps, bestHostIp, isPrivateV4, effectiveKind, validateAnswer, buildDeckSteps, splitMarpSlides, deriveMarpMarkdown, pickConverters, normalizeQuiz, validateConfigObject, mergeConfig, historyToPrune, isSafeWidgetSrc, isRemoteWidgetUrl, isPackageRef, CONFIG_FILE, CONFIG_SPEC, QUESTION_TYPES, ANSWER_KINDS, WIDGET_SOURCES, SCALE_MAX_STEPS, WIDGET_MAX_HEIGHT, VIRTUAL_IFACE };

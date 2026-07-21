@@ -201,6 +201,11 @@ textarea.field { resize: vertical; min-height: 38px; line-height: 1.45; font-fam
 .num { width: 68px; background: var(--bg); border: 1px solid var(--panel2); border-radius: 7px; padding: 6px 8px; }
 .num:focus { outline: none; border-color: var(--cyan); }
 
+/* Raw-HTML / JSON fields for a widget question: monospace, and the code box is
+   capped so a big inline game scrolls instead of pushing the card off-screen. */
+.field.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; background: var(--bg); border-color: var(--panel2); }
+textarea.field.mono { max-height: 340px; }
+
 /* ---------------------------------------------------------------- extras */
 .extras { margin-top: 14px; border-top: 1px solid var(--panel2); padding-top: 12px; }
 .extra-lbl { display: block; color: var(--muted); font-size: 12px; margin: 8px 0 2px 8px; }

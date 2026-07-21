@@ -7,6 +7,7 @@ require('../sqlite-guard').ensureSqlite();
 
 const cmd = process.argv[2];
 if (cmd === 'new') require('../scaffold.js');
+else if (cmd === 'widget') require('../widget-cli.js'); // presik widget add/ls — widget-cli.js parses the rest
 else if (cmd === 'report') { process.argv.splice(2, 1); require('../report.js'); } // drop "report", report.js parses the rest
 // `presik edit <session>` is the ordinary server with the editor opened for you
 // — one code path, so what you edit is never a different app from the one that

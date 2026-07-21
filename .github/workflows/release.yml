@@ -1,19 +1,85 @@
 name: release
 
-# Build the single-file `presik` binary for each OS, smoke-test it, and publish
-# it to a GitHub Release. Runs on a version tag (v*) — or manually to just build
-# and upload Actions artifacts. GitHub's setup-node provides official Node
-# builds (which carry the SEA fuse), so build.js uses them directly.
+# Cut a release automatically. Bump "version" in package.json and push to main
+# → this workflow tags v<version>, builds the single-file binary for each OS,
+# smoke-tests it, attaches the binaries to a GitHub Release, and publishes the
+# npm package to GitHub Packages. Pushing a v* tag by hand, or running this
+# manually (workflow_dispatch), does the same for the current version.
+#
+# The tag is created inside the `gate` job of THIS run — a tag pushed by the
+# built-in GITHUB_TOKEN does not trigger another workflow, so we don't rely on
+# the tag re-triggering; the whole chain runs here.
 on:
   push:
+    branches: [main]
     tags: ['v*']
   workflow_dispatch:
 
 permissions:
-  contents: write # create/upload the GitHub Release
+  contents: write # tag the repo + create/upload the GitHub Release
 
 jobs:
+  # Decide whether this push should release, and on what tag. Auto-releases only
+  # when the push actually changed package.json's version (so ordinary commits to
+  # main don't cut releases); a manual run or a pushed tag always releases.
+  gate:
+    runs-on: ubuntu-latest
+    outputs:
+      release: ${{ steps.decide.outputs.release }}
+      tag: ${{ steps.decide.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2 # HEAD + HEAD~1, to see if this push changed the version
+      - id: decide
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # A hand-pushed tag releases exactly that tag.
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            echo "release=true" >> "$GITHUB_OUTPUT"
+            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          cur=$(node -p "require('./package.json').version")
+          tag="v${cur}"
+
+          # Auto path: release only if this push changed the version. A manual
+          # run (workflow_dispatch) forces a release of whatever's committed now.
+          release=false
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            release=true
+          else
+            git show HEAD~1:package.json > prev.json 2>/dev/null || echo '{}' > prev.json
+            prev=$(node -p "require('./prev.json').version || ''")
+            rm -f prev.json
+            if [ "$cur" != "$prev" ]; then release=true; fi
+          fi
+
+          if [ "$release" != "true" ]; then
+            echo "No version change — nothing to release."
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if git ls-remote --exit-code --tags origin "refs/tags/${tag}" >/dev/null 2>&1; then
+            echo "Tag ${tag} already exists — skipping (bump the version to release)."
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag "$tag"
+          git push origin "$tag"
+          echo "Tagged ${tag}."
+          echo "release=true" >> "$GITHUB_OUTPUT"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+
   build:
+    needs: gate
+    if: needs.gate.outputs.release == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -26,7 +92,7 @@ jobs:
             asset: presik-win-x64
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4 # the triggering commit == the tagged version
       - uses: actions/setup-node@v4
         with:
           node-version: 24.x
@@ -43,24 +109,21 @@ jobs:
           path: ${{ matrix.asset }}*
           if-no-files-found: error
       - name: Publish to GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "${{ github.ref_name }}" --title "${{ github.ref_name }}" --generate-notes 2>/dev/null || true
-          gh release upload "${{ github.ref_name }}" ${{ matrix.asset }}* --clobber
+          gh release create "${{ needs.gate.outputs.tag }}" --title "${{ needs.gate.outputs.tag }}" --generate-notes 2>/dev/null || true
+          gh release upload "${{ needs.gate.outputs.tag }}" ${{ matrix.asset }}* --clobber
 
   # Publish the npm package (the source that runs via `npx presik`) to GitHub
-  # Packages — only once every platform's binary has built and smoke-passed, and
-  # only on a version tag. package.json keeps `private: true` as a guard against
-  # an accidental npmjs publish; here we drop it and scope the name to the owner,
-  # which GitHub Packages requires. The binaries themselves go to the Release
-  # above; this is the installable `@<owner>/presik` for `npm i` / `npx`.
+  # Packages — only once every platform's binary has built and smoke-passed.
+  # package.json keeps `private: true` as a guard against an accidental npmjs
+  # publish; here we drop it and scope the name to the owner, which GitHub
+  # Packages requires. The binaries themselves go to the Release above.
   publish-package:
-    name: Publish package to GitHub Packages
-    needs: build
-    if: startsWith(github.ref, 'refs/tags/')
+    needs: [gate, build]
+    if: needs.gate.outputs.release == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -72,12 +135,14 @@ jobs:
           node-version: 24.x
           registry-url: 'https://npm.pkg.github.com'
       - name: Prepare package for GitHub Packages
+        env:
+          TAG: ${{ needs.gate.outputs.tag }}
         run: |
           owner=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
           npm pkg delete private
           npm pkg set name="@${owner}/presik"
           # Keep the published version in lockstep with the release tag (v1.2.3 → 1.2.3).
-          npm version --no-git-tag-version --allow-same-version "${GITHUB_REF_NAME#v}"
+          npm version --no-git-tag-version --allow-same-version "${TAG#v}"
       - name: Publish
         run: npm publish
         env:

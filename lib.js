@@ -297,6 +297,10 @@ function validateWidget(q, errors) {
       errors.push('Question ' + q.id + ': widget "height" must be between ' + WIDGET_MIN_HEIGHT + ' and ' + WIDGET_MAX_HEIGHT + ' px');
   }
   if (w.isolate != null && typeof w.isolate !== 'boolean') errors.push('Question ' + q.id + ': widget "isolate" must be true or false');
+  // Cross-origin isolation (threads / SharedArrayBuffer) needs the widget to run
+  // at a real origin — which relaxes the sandbox and so is only for a front-end
+  // you control (src/package/url), never inline srcdoc.
+  if (w.isolate === true && w.srcdoc != null) errors.push('Question ' + q.id + ': widget "isolate" needs a src/package/url source, not inline "srcdoc" (isolation relaxes the sandbox — only for a front-end you control)');
   if (w.config != null && (typeof w.config !== 'object' || Array.isArray(w.config)))
     errors.push('Question ' + q.id + ': widget "config" must be a JSON object');
 }

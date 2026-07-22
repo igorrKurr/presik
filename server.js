@@ -237,6 +237,23 @@ function resolveWidgetPackages(fatal) {
 }
 resolveWidgetPackages(true);
 
+// Cross-origin isolation (SharedArrayBuffer / wasm threads for a heavy engine) is
+// a page-wide property: the student page opts in with COOP+COEP, embedded widget
+// docs assert COEP, and their assets carry CORP. We only send those headers when
+// the session actually has an isolate widget, so ordinary sessions keep the lax,
+// maximally-compatible headers. A widget is isolate if its descriptor says so or
+// its resolved package manifest does.
+let SESSION_ISOLATE = false;
+function widgetIsolate(q) {
+  if (q.type !== 'widget' || !q.widget) return false;
+  if (q.widget.isolate) return true;
+  const r = pkgResolved[q.id];
+  return !!(r && r.manifest && r.manifest.isolate);
+}
+function computeIsolation() { SESSION_ISOLATE = quiz.questions.some(widgetIsolate); }
+computeIsolation();
+const COOP_COEP = { 'Cross-Origin-Opener-Policy': 'same-origin', 'Cross-Origin-Embedder-Policy': 'require-corp' };
+
 // ---------------------------------------------------------------- slides (Marp)
 // Slides are the source of truth in deck.marp.md; deck.marp.html is a build
 // artifact the server rebuilds itself whenever the .md is newer than the
@@ -344,8 +361,11 @@ function serveFileFrom(res, root, encodedRel) {
     const type = STATIC_TYPES[path.extname(filePath).toLowerCase()] || 'application/octet-stream';
     // A widget runs in a null-origin sandbox, so it fetches its own assets/wasm
     // cross-origin — allow that (these are public bundle files, no credentials).
-    // CORP lets them still load if the page is ever cross-origin isolated.
-    return send(res, 200, type, fs.readFileSync(filePath), { 'Access-Control-Allow-Origin': '*', 'Cross-Origin-Resource-Policy': 'cross-origin' });
+    // CORP lets them load under a cross-origin-isolated page; when the session is
+    // isolated the entry doc also asserts COEP so the iframe can be isolated too.
+    const extra = { 'Access-Control-Allow-Origin': '*', 'Cross-Origin-Resource-Policy': 'cross-origin' };
+    if (SESSION_ISOLATE) extra['Cross-Origin-Embedder-Policy'] = 'require-corp';
+    return send(res, 200, type, fs.readFileSync(filePath), extra);
   }
   return send(res, 404, 'text/plain; charset=utf-8', 'not found');
 }
@@ -651,6 +671,7 @@ function reloadQuiz(doc) {
   const wasOn = cur() ? cur().id : null;
   quiz = doc;
   resolveWidgetPackages(false); // a newly-referenced package may need resolving; missing ones just warn
+  computeIsolation();           // an edit may add or drop the session's need for cross-origin isolation
   const live = new Set(quiz.questions.map((q) => q.id));
   for (const qid of [...answers.keys()]) if (!live.has(qid)) answers.delete(qid);
   // Stay on whatever question the class was looking at, wherever it just moved
@@ -720,7 +741,10 @@ const server = http.createServer(async (req, res) => {
   const p = url.pathname;
   const isHost = url.searchParams.get('key') === KEY;
 
-  if (p === '/') return send(res, 200, 'text/html; charset=utf-8', readAssetText('public/student.html'));
+  // The student page opts into cross-origin isolation only when the session has
+  // an isolate widget — otherwise COOP/COEP would needlessly constrain what an
+  // ordinary widget (or future page resource) may load.
+  if (p === '/') return send(res, 200, 'text/html; charset=utf-8', readAssetText('public/student.html'), SESSION_ISOLATE ? COOP_COEP : undefined);
 
   if (p === '/host') {
     if (!isHost) return send(res, 403, 'text/plain; charset=utf-8', 'Add ?key=...');
@@ -740,7 +764,9 @@ const server = http.createServer(async (req, res) => {
   if (p === '/favicon.ico') { res.writeHead(204); return res.end(); }
 
   if (p === '/embed.js') return send(res, 200, 'application/javascript; charset=utf-8', readAssetText('public/embed.js'));
-  if (p === '/widget-sdk.js') return send(res, 200, 'application/javascript; charset=utf-8', readAssetText('public/widget-sdk.js'));
+  // CORP so a null-origin sandboxed widget can still load the SDK on a
+  // cross-origin-isolated (COEP) student page.
+  if (p === '/widget-sdk.js') return send(res, 200, 'application/javascript; charset=utf-8', readAssetText('packages/widget-sdk/index.js'), { 'Cross-Origin-Resource-Policy': 'cross-origin' });
   if (p === '/embed.css') return send(res, 200, 'text/css; charset=utf-8', readAssetText('public/embed.css'));
 
   // Self-hosted pdf.js (no CDN — works offline and inside a CSP).

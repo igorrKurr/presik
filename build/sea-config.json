@@ -15,7 +15,7 @@
     "public/edit.questions.js": "public/edit.questions.js",
     "public/embed.js": "public/embed.js",
     "public/embed.css": "public/embed.css",
-    "public/widget-sdk.js": "public/widget-sdk.js",
+    "packages/widget-sdk/index.js": "packages/widget-sdk/index.js",
     "public/vendor/pdf.mjs": "public/vendor/pdf.mjs",
     "public/vendor/pdf.worker.mjs": "public/vendor/pdf.worker.mjs",
     "templates/questions.example.json": "templates/questions.example.json",

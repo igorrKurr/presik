@@ -1,0 +1,26 @@
+{
+  "name": "@igorrkurr/presik-widget",
+  "version": "4.2.0",
+  "description": "Client SDK for building presik quiz widgets — interactive question front-ends that report an answer to the quiz over postMessage.",
+  "main": "index.js",
+  "files": [
+    "index.js",
+    "README.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/igorrKurr/presik.git",
+    "directory": "packages/widget-sdk"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
+  "keywords": [
+    "presik",
+    "quiz",
+    "widget",
+    "sdk",
+    "postmessage",
+    "iframe"
+  ]
+}

@@ -163,8 +163,12 @@
       if (q.note) shell += '<div class="note">' + esc(q.note) + '</div>';
       // sandbox="allow-scripts" WITHOUT allow-same-origin → the game runs at a
       // null origin: no access to this page's DOM, storage, or the session.
+      // An isolate widget needs a real origin to be cross-origin isolated
+      // (SharedArrayBuffer / threads), so it also gets allow-same-origin — which
+      // relaxes the sandbox, hence isolate is only for a front-end you control.
+      var sandbox = q.widget && q.widget.isolate ? 'allow-scripts allow-same-origin' : 'allow-scripts';
       shell += '<iframe class="widget" id="wframe" title="Interactive question" ' +
-        'sandbox="allow-scripts" style="height:' + widgetHeight(q) + 'px"></iframe>';
+        'sandbox="' + sandbox + '" style="height:' + widgetHeight(q) + 'px"></iframe>';
       shell += '<div class="widget-status" id="wstatus"></div>';
       app.innerHTML = shell;
       const f = frame();

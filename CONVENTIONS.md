@@ -120,7 +120,7 @@ A widget supplies its own front-end but **borrows one of the three primitive con
 - **`answer`** — the primitive kind the reported value is stored and graded as (`choice` needs `options`; `scale` needs `min`/`max`; `text` is free-form). Defaults to `choice`.
 - **`widget.height`** — the iframe height on the phone, in px (80–2000).
 - **`widget.config`** — an optional JSON object handed to the front-end verbatim at start.
-- **`widget.isolate`** — reserved for engines needing cross-origin isolation (threads / `SharedArrayBuffer`); accepted today, full page-level isolation is a follow-up.
+- **`widget.isolate`** — opt into **cross-origin isolation** for an engine that needs threads / `SharedArrayBuffer`. When any widget in the session sets it, the student page is served with `COOP: same-origin` + `COEP: require-corp`, bundle docs assert `COEP` and their assets carry `CORP`, and the isolate widget's iframe runs with `allow-same-origin` (a **real origin**, so it can be `crossOriginIsolated`). That relaxes the sandbox — the widget can reach the page's origin — so `isolate` is **only** for a front-end you control (`src` / `package` / `url`, never inline `srcdoc`). A `url` widget must also send its own `COOP`/`COEP`. Leave it off unless your engine actually needs SharedArrayBuffer.
 
 **Where the front-end comes from — exactly one of these `widget` keys.** A small thing can be inline; a real game is its own project (its own repo, build, tests, assets) and you reference its build output. All four load into the same sandbox and speak the same protocol — only *where the code lives* differs:
 
@@ -147,7 +147,7 @@ Because presik usually runs on a classroom LAN with no internet, **`src` (a vend
 </script>
 ```
 
-A `srcdoc`/`src` widget loads it with `<script src="/widget-sdk.js">`; an **external project** bundles the same file (`import PresikWidget from 'presik-widget'`) so it builds and tests independently. That file also exports **`PresikWidget.mockHost(iframe, …)`** — a fake quiz host, so the game project can assert its integration (`host.answers` ⇢ what it reported) in its own CI, with no presik server involved.
+A `srcdoc`/`src` widget loads it with `<script src="/widget-sdk.js">`; an **external project** installs it from GitHub Packages (`import PresikWidget from '@igorrkurr/presik-widget'`) so it builds and tests independently — see `packages/widget-sdk/`. That file also exports **`PresikWidget.mockHost(iframe, …)`** — a fake quiz host, so the game project can assert its integration (`host.answers` ⇢ what it reported) in its own CI, with no presik server involved.
 
 ### Widget packages — shipping an independently-built game
 

@@ -134,16 +134,26 @@ jobs:
         with:
           node-version: 24.x
           registry-url: 'https://npm.pkg.github.com'
-      - name: Prepare package for GitHub Packages
+      - name: Prepare packages for GitHub Packages
         env:
           TAG: ${{ needs.gate.outputs.tag }}
         run: |
+          version="${TAG#v}"
           owner=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          # Main package: drop the private guard, scope the name to the owner
+          # (GitHub Packages requires it), and match the tag version.
           npm pkg delete private
           npm pkg set name="@${owner}/presik"
-          # Keep the published version in lockstep with the release tag (v1.2.3 → 1.2.3).
-          npm version --no-git-tag-version --allow-same-version "${TAG#v}"
-      - name: Publish
+          npm version --no-git-tag-version --allow-same-version "$version"
+          # Widget SDK (packages/widget-sdk) is already scoped + publishConfig'd;
+          # just line its version up with the release.
+          ( cd packages/widget-sdk && npm version --no-git-tag-version --allow-same-version "$version" )
+      - name: Publish presik
         run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish the widget SDK
+        run: npm publish
+        working-directory: packages/widget-sdk
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

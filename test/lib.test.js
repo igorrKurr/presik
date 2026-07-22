@@ -119,6 +119,9 @@ test('normalizeQuiz: widget errors on what would actually break a class', () => 
   assert.match(err({ type: 'widget', text: 'a', answer: 'text', widget: { url: 'not-a-url' } }), /"url" must be an absolute http/);
   assert.match(err({ type: 'widget', text: 'a', answer: 'text', widget: { dev: 'ftp://x' } }), /"dev" must be an absolute http/);
   assert.match(err({ type: 'widget', text: 'a', answer: 'text', widget: { srcdoc: 'x', isolate: 'yes' } }), /"isolate" must be true or false/);
+  assert.match(err({ type: 'widget', text: 'a', answer: 'text', widget: { srcdoc: '<p>x', isolate: true } }), /"isolate" needs a src\/package\/url source/);
+  // isolate on a controllable source is fine
+  assert.deepStrictEqual(normalizeQuiz({ questions: [{ type: 'widget', text: 'a', answer: 'text', widget: { src: 'g/index.html', isolate: true } }] }, 's01').errors, []);
   assert.match(err({ type: 'widget', text: 'a', answer: 'text', widget: { srcdoc: 'x', height: 99999 } }), /"height" must be between/);
   // each source is valid on its own
   const ok = (w) => normalizeQuiz({ questions: [{ type: 'widget', text: 'a', answer: 'text', widget: w }] }, 's01').errors;

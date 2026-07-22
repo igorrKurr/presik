@@ -17,6 +17,7 @@
     "bin/",
     "public/",
     "templates/",
+    "packages/widget-sdk/index.js",
     "CONVENTIONS.md",
     "UPGRADE.md"
   ],

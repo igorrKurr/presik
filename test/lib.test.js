@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert');
-const { parsePackageRef, versionSatisfies, pickPackageDir } = require('../widgets');
-const { validateAnswer, effectiveKind, isSafeWidgetSrc, isRemoteWidgetUrl, isPackageRef, groupSlug, sessionSlug, parseArgs, rankHostIps, bestHostIp, toSessionName, buildDeckSteps, splitMarpSlides, deriveMarpMarkdown, pickConverters, normalizeQuiz, validateConfigObject, mergeConfig, historyToPrune } = require('../lib');
+const { parsePackageRef, versionSatisfies, pickPackageDir } = require('../src/widgets');
+const { validateAnswer, effectiveKind, isSafeWidgetSrc, isRemoteWidgetUrl, isPackageRef, groupSlug, sessionSlug, parseArgs, rankHostIps, bestHostIp, toSessionName, buildDeckSteps, splitMarpSlides, deriveMarpMarkdown, pickConverters, normalizeQuiz, validateConfigObject, mergeConfig, historyToPrune } = require('../src/lib');
 
 test('validateAnswer: choice accepts only real option ids', () => {
   const q = { type: 'choice', options: [{ id: 'a' }, { id: 'b' }] };

@@ -26,7 +26,7 @@ v3 changes the structure of content files (not the questions/slides themselves, 
 | `data/lecture-quiz.db` | `.presik/data.db` (old database is picked up — the schema grows itself) |
 | `results/*.json` | `.presik/results/*.json` |
 | `questions/_template.json` | `templates/questions.example.json` |
-| `node server.js s01` | `presik s01` (after `npm link`), or as before — `node server.js s01` |
+| `node server.js s01` | `presik s01` (after `npm link`), or run the source directly — `node src/server.js s01` |
 
 The `<id>` used in `data-quiz-question`/`data-quiz-reveal` markers in `.marp.md` doesn't change — it was always the `id` of a question in `questions.json`, that file just now lives alongside the deck instead of in a separate `questions/` folder.
 

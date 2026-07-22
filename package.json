@@ -3,7 +3,7 @@
   "version": "4.4.0",
   "private": true,
   "description": "Live in-class quizzes for interactive lectures: students answer from their phones, the projector shows the question and result, and arrow keys drive your slides and the quiz in sync. Bring any deck — Marp, PDF, PowerPoint, or Keynote — and presik renders it with the quiz interleaved, in class or over Zoom. Runs locally; the engine is separate from content (courses/slides/questions).",
-  "main": "server.js",
+  "main": "src/server.js",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/igorrKurr/presik.git"
@@ -13,7 +13,7 @@
     "presik-report": "bin/report.js"
   },
   "files": [
-    "*.js",
+    "src/",
     "bin/",
     "public/",
     "templates/",
@@ -25,9 +25,9 @@
     "node": ">=22.5.0"
   },
   "scripts": {
-    "start": "node server.js",
-    "tunnel": "node server.js --tunnel",
-    "report": "node report.js",
+    "start": "node src/server.js",
+    "tunnel": "node src/server.js --tunnel",
+    "report": "node src/report.js",
     "test": "node --test",
     "build": "node build/build.js",
     "smoke": "node scripts/smoke.mjs"

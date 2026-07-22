@@ -11,7 +11,7 @@ let sea = null;
 try { sea = require('node:sea'); } catch (_) {}
 const IS_SEA = !!(sea && typeof sea.isSea === 'function' && sea.isSea());
 
-const ROOT = __dirname; // engine dir when running from source/npm
+const ROOT = path.resolve(__dirname, '..'); // engine root (src/ lives under it) when running from source/npm
 
 function readAssetText(rel) {
   if (IS_SEA) return sea.getAsset(rel, 'utf8');

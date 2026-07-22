@@ -1,6 +1,7 @@
 node_modules/
 .presik/
 dist/
+graphify-out/
 **/deck.marp.html
 **/.deck.build.md
 **/join-qr.svg

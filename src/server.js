@@ -41,8 +41,8 @@ const { buildReport } = require('./report-data');
 const { loadConfig } = require('./config');
 const { readQuestions, saveQuestions, restoreQuestions, listHistory, readHistory } = require('./editor');
 
-const ENGINE_DIR = __dirname;
-const VERSION = require('./package.json').version;
+const ENGINE_DIR = path.resolve(__dirname, '..'); // engine root — src/ sits under it, node_modules is a sibling
+const VERSION = require('../package.json').version;
 
 // ---------------------------------------------------------------- arguments
 const argv = process.argv.slice(2);

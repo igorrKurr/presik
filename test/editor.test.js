@@ -7,7 +7,7 @@ const assert = require('node:assert');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { formatQuestions, readQuestions, saveQuestions, restoreQuestions, listHistory } = require('../editor');
+const { formatQuestions, readQuestions, saveQuestions, restoreQuestions, listHistory } = require('../src/editor');
 
 function session(doc) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'presik-editor-'));

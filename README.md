@@ -56,7 +56,7 @@ npm install                # once
 npm link                   # makes `presik` and `presik-report` global commands
 ```
 
-(Or skip `npm link` and run `node server.js …` / `node report.js …` directly.)
+(Or skip `npm link` and run `node src/server.js …` / `node src/report.js …` directly.)
 
 **Build your own binary** (for the current OS — cross-compiling isn't supported):
 

@@ -1,3 +1,3 @@
 #!/usr/bin/env node
-require('../sqlite-guard').ensureSqlite();
-require('../report.js');
+require('../src/sqlite-guard').ensureSqlite();
+require('../src/report.js');

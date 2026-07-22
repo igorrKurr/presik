@@ -1,0 +1,131 @@
+/* presik analytics — the interactive report. Dark theme reuses host.html's
+   palette so the whole app reads as one surface; the series slots come from the
+   validated colorblind-safe categorical set (dataviz skill, dark column). One
+   stylesheet serves both the live web report and the CLI-baked standalone HTML,
+   and carries a print block so "Export → Save as PDF" comes out clean. */
+:root {
+  --bg:#10161f; --panel:#1b2634; --panel2:#223041; --line:#2c3a4d;
+  --txt:#f1f5f9; --muted:#94a3b8; --dim:#64748b;
+  --cyan:#38bdf8; --green:#4ade80; --red:#f87171; --amber:#f5a524;
+  /* categorical group series — fixed order, never cycled */
+  --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500;
+  --s5:#d55181; --s6:#22a922; --s7:#9085e9; --s8:#e66767;
+  --radius:12px;
+}
+* { box-sizing:border-box; }
+html, body { margin:0; }
+body { background:var(--bg); color:var(--txt);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size:15px; line-height:1.5; -webkit-font-smoothing:antialiased; }
+
+/* ---- shell ------------------------------------------------------------- */
+.wrap { max-width:1180px; margin:0 auto; padding:26px 30px 90px; }
+header.top { display:flex; align-items:flex-end; justify-content:space-between; gap:18px; flex-wrap:wrap; margin-bottom:4px; }
+.brand { display:flex; align-items:baseline; gap:12px; }
+.brand h1 { font-size:26px; margin:0; letter-spacing:-.01em; }
+.brand .scope { font-size:12px; text-transform:uppercase; letter-spacing:.08em; color:var(--cyan);
+  border:1px solid var(--line); border-radius:20px; padding:3px 11px; }
+.sub { color:var(--muted); font-size:14px; margin:2px 0 20px; }
+
+/* ---- controls ---------------------------------------------------------- */
+.controls { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:22px; }
+.controls .grow { flex:1; }
+.ctl { display:flex; flex-direction:column; gap:3px; }
+.ctl label { font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--dim); }
+select, .btn { background:var(--panel); color:var(--txt); border:1px solid var(--line);
+  border-radius:8px; padding:8px 12px; font-size:14px; font-family:inherit; cursor:pointer; }
+select:hover, .btn:hover { border-color:var(--dim); }
+select:focus, .btn:focus-visible { outline:2px solid var(--cyan); outline-offset:1px; }
+.btn.primary { background:var(--cyan); color:#08131c; border-color:var(--cyan); font-weight:600; }
+.btn[aria-pressed="true"] { background:var(--panel2); border-color:var(--cyan); color:var(--cyan); }
+
+/* ---- KPI tiles --------------------------------------------------------- */
+.tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-bottom:26px; }
+.tile { background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:15px 17px; }
+.tile .k { font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); }
+.tile .v { font-size:30px; font-weight:650; margin-top:5px; letter-spacing:-.02em; }
+.tile .v small { font-size:15px; color:var(--muted); font-weight:400; }
+.tile.accent .v { color:var(--cyan); }
+
+/* ---- cards & sections -------------------------------------------------- */
+section { margin-bottom:30px; }
+h2.sec { font-size:14px; text-transform:uppercase; letter-spacing:.07em; color:var(--muted);
+  margin:0 0 13px; padding-bottom:8px; border-bottom:1px solid var(--line); }
+.card { background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:18px 20px; margin-bottom:14px; }
+.card .qhead { display:flex; justify-content:space-between; gap:16px; align-items:baseline; margin-bottom:12px; }
+.card .qhead .qt { font-size:17px; font-weight:600; }
+.card .qhead .qmeta { color:var(--muted); font-size:13px; white-space:nowrap; }
+.qnote { color:var(--muted); font-size:13px; margin:-6px 0 12px; }
+.grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:14px; }
+.clickable { cursor:pointer; }
+.clickable:hover { border-color:var(--dim); }
+
+/* ---- bar chart (reuses host.html's bar idea) --------------------------- */
+.bars { display:flex; flex-direction:column; gap:9px; }
+.bar .lab { display:flex; justify-content:space-between; gap:12px; font-size:14px; margin-bottom:4px; }
+.bar .lab .n { color:var(--muted); font-variant-numeric:tabular-nums; white-space:nowrap; }
+.track { height:22px; background:var(--panel2); border-radius:5px; overflow:hidden; }
+.fill { height:100%; width:0; background:var(--dim); border-radius:5px; transition:width .5s cubic-bezier(.2,.7,.2,1); }
+.bar.correct .fill { background:var(--green); }
+.bar.correct .lab { color:var(--green); }
+.bar.lead .fill { background:var(--cyan); }
+.bar.wrong .fill { background:var(--panel2); box-shadow:inset 0 0 0 1px var(--line); }
+
+/* ---- text answers ------------------------------------------------------ */
+.texts { display:flex; flex-wrap:wrap; gap:8px; }
+.texts div { background:var(--panel2); border:1px solid var(--line); border-radius:8px; padding:8px 12px; font-size:14px; max-width:100%; }
+.empty { color:var(--dim); font-size:14px; font-style:italic; }
+
+/* ---- group comparison / legend ---------------------------------------- */
+.legend { display:flex; flex-wrap:wrap; gap:14px; margin:2px 0 14px; font-size:13px; color:var(--muted); }
+.legend span { display:inline-flex; align-items:center; gap:6px; }
+.swatch { width:11px; height:11px; border-radius:3px; display:inline-block; }
+
+/* ---- heatmap ----------------------------------------------------------- */
+.heat { overflow-x:auto; }
+table.heat-t { border-collapse:separate; border-spacing:3px; font-size:12px; }
+table.heat-t th { color:var(--muted); font-weight:500; text-align:left; padding:4px 6px; white-space:nowrap; }
+table.heat-t th.q { max-width:230px; overflow:hidden; text-overflow:ellipsis; }
+table.heat-t td { text-align:center; border-radius:5px; padding:6px 9px; min-width:44px;
+  color:#08131c; font-weight:600; font-variant-numeric:tabular-nums; }
+table.heat-t td.na { background:var(--panel2)!important; color:var(--dim); }
+
+/* ---- svg charts (donut, sparkline) ------------------------------------ */
+.donut-wrap { display:flex; align-items:center; gap:20px; }
+.donut { flex:none; }
+.donut-c { font-size:13px; color:var(--muted); }
+svg .grid-line { stroke:var(--line); stroke-width:1; }
+svg .spark-line { fill:none; stroke:var(--cyan); stroke-width:2; }
+svg .spark-dot { fill:var(--cyan); }
+svg text.ax { fill:var(--dim); font-size:11px; }
+
+/* ---- generic table view ------------------------------------------------ */
+table.data { width:100%; border-collapse:collapse; font-size:14px; }
+table.data th, table.data td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--line); }
+table.data th { color:var(--muted); font-weight:500; font-size:12px; text-transform:uppercase; letter-spacing:.04em; }
+table.data td.num, table.data th.num { text-align:right; font-variant-numeric:tabular-nums; }
+
+/* ---- tooltip ----------------------------------------------------------- */
+#tip { position:fixed; z-index:50; pointer-events:none; background:#0b1118; color:var(--txt);
+  border:1px solid var(--line); border-radius:8px; padding:7px 10px; font-size:13px; max-width:280px;
+  box-shadow:0 6px 24px rgba(0,0,0,.5); opacity:0; transition:opacity .12s; }
+#tip.on { opacity:1; }
+#tip b { color:var(--cyan); }
+
+.foot { color:var(--dim); font-size:12px; text-align:center; margin-top:34px; }
+.loading, .err { padding:60px 0; text-align:center; color:var(--muted); font-size:17px; }
+.err { color:var(--red); }
+
+/* ---- print → PDF: same visuals, on white ------------------------------ */
+@media print {
+  @page { margin:14mm; }
+  :root { --bg:#fff; --panel:#fff; --panel2:#eef2f6; --line:#d3dbe4; --txt:#0b1118;
+    --muted:#475569; --dim:#64748b; }
+  body { font-size:12px; }
+  .wrap { max-width:none; padding:0; }
+  .controls, .btn, #tip { display:none !important; }
+  .tile, .card { break-inside:avoid; box-shadow:none; }
+  section { break-inside:avoid-page; }
+  .fill { transition:none; }
+  a { color:inherit; text-decoration:none; }
+}

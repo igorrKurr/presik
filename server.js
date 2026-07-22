@@ -37,6 +37,7 @@ const { groupSlug, sessionSlug, toSessionName, parseArgs, bestHostIp, rankHostIp
 const { resolvePackage } = require('./widgets');
 const { readAssetText } = require('./assets');
 const { ensureDeckPdf } = require('./convert');
+const { buildReport } = require('./report-data');
 const { loadConfig } = require('./config');
 const { readQuestions, saveQuestions, restoreQuestions, listHistory, readHistory } = require('./editor');
 
@@ -751,6 +752,28 @@ const server = http.createServer(async (req, res) => {
     return send(res, 200, 'text/html; charset=utf-8', readAssetText('public/host.html'));
   }
 
+  // ---------------------------------------------------------------- report
+  // The analytics report — the same DB report.js reads on the CLI, but as an
+  // interactive, filterable web surface. It shows student answers, so it's
+  // gated behind the teacher key exactly like /host and /edit. Its JSON model
+  // (buildReport) is shared with the CLI so the two never drift.
+  if (p === '/report' || p === '/report/') {
+    if (!isHost) return send(res, 403, 'text/plain; charset=utf-8', 'Add ?key=... — the report is teacher-only.');
+    return send(res, 200, 'text/html; charset=utf-8', readAssetText('public/report.html'));
+  }
+  if (p === '/report.css') return send(res, 200, 'text/css; charset=utf-8', readAssetText('public/report.css'));
+  if (p === '/report.js') return send(res, 200, 'application/javascript; charset=utf-8', readAssetText('public/report.js'));
+  if (p === '/api/report') {
+    if (!isHost) return send(res, 403, 'application/json; charset=utf-8', '{"error":"forbidden"}');
+    const model = buildReport(db, {
+      course: url.searchParams.get('course') || null,
+      session: url.searchParams.get('session') || null,
+      group: url.searchParams.get('group') || null,
+      contentDir: CONTENT_DIR,
+    });
+    return send(res, 200, 'application/json; charset=utf-8', JSON.stringify(model));
+  }
+
   // Stand-alone projector view for a questions-only session (no deck) — shows
   // the join QR, the answer counter, and the distribution after reveal. A
   // session with a deck uses /slides instead. View-only.
@@ -1064,6 +1087,7 @@ function banner() {
   console.log('\n  Students:  ' + joinUrl);
   console.log('  Teacher:   ' + base + '/host?key=' + KEY + '  (control + live view — keep private)');
   console.log('  Editor:    ' + base + '/edit?key=' + KEY + '  (write the questions — keep private)');
+  console.log('  Report:    ' + base + '/report?key=' + KEY + '  (analytics across runs/groups/courses — keep private)');
   if (deckType === 'marp' && MARP_AVAILABLE) console.log('  Slides:    ' + base + '/slides?key=' + KEY + '  (without ?key= — view only, no control)');
   else if (deckType === 'pdf') console.log('  Slides:    ' + base + '/slides?key=' + KEY + '  (PDF deck; without ?key= — view only)');
   else if (deckType === 'marp') console.log('  Slides:    (deck.marp.md found, but Marp isn\'t in this build — use a PDF deck, or install via npm)');

@@ -10,13 +10,21 @@
 //    presik-report --course web-dev                  → all sessions of one course
 //    presik-report --session s01 --group "3-A"        → just one group
 //    presik-report --csv > answers.csv                  → all answers as CSV (for pandas/excel)
+//    presik-report --session s01 --html report.html      → the interactive web report, standalone & offline
+//    presik-report --session s01 --pdf report.pdf         → same visuals straight to PDF (needs Chrome; else writes .html)
+//        add --open to any of the above to open the file when it's written
+//
+// The --html / --pdf views are the very page the running server serves at
+// /report — same shared model (report-data.js) and render core — so the two
+// never drift. Everything else here stays the raw text/CSV output it always was.
 // =====================================================================
 const path = require('path');
 const fs = require('fs');
 const { openDb } = require('./db');
 const { parseArgs } = require('./lib');
+const { buildReport } = require('./report-data');
 
-const { opt, has } = parseArgs(process.argv.slice(2), ['dir', 'db', 'session', 'course', 'group']);
+const { opt, has } = parseArgs(process.argv.slice(2), ['dir', 'db', 'session', 'course', 'group', 'html', 'pdf']);
 
 const CONTENT_DIR = path.resolve(opt('dir', process.cwd()));
 const DB_FILE = path.resolve(opt('db', path.join(CONTENT_DIR, '.presik', 'data.db')));
@@ -29,6 +37,41 @@ const db = openDb(DB_FILE);
 const SESSION = opt('session', null);
 const COURSE = opt('course', null);
 const GROUP = opt('group', null);
+
+// ---- rich export: the interactive web report, standalone (--html) or PDF (--pdf).
+// Handled before the text branches and then we stop — these are output modes of
+// their own, not additions to the console listing.
+if (has('html') || has('pdf')) {
+  const { renderStandalone, writePdf, openFile } = require('./report-export');
+  const rel = (p) => path.relative(process.cwd(), p);
+  const label = (SESSION ? SESSION.replace(/[\\/]/g, '-') : COURSE || 'all') + (GROUP ? '-' + GROUP : '');
+  const outName = (ext) => path.resolve(process.cwd(), 'presik-report-' + label + '.' + ext);
+  const model = buildReport(db, { course: COURSE, session: SESSION, group: GROUP, contentDir: CONTENT_DIR });
+
+  if (has('html')) {
+    const file = path.resolve(opt('html', outName('html')));
+    fs.writeFileSync(file, renderStandalone(model));
+    console.log('\n  Report written: ' + rel(file) + '\n');
+    if (has('open')) openFile(file);
+  }
+  if (has('pdf')) {
+    const file = path.resolve(opt('pdf', outName('pdf')));
+    writePdf(file, model).then((r) => {
+      if (r.ok) { console.log('\n  PDF written: ' + rel(file) + '\n'); if (has('open')) openFile(file); }
+      else {
+        // Two reasons land here: no browser was found, or puppeteer-core isn't
+        // available (the packaged binary ships without it). Same fix either way.
+        console.log('\n  Couldn\'t render the PDF directly — wrote ' + rel(r.htmlFile) + ' instead.\n' +
+          '  Open it and Print → Save as PDF. (From a source/npm install, set CHROME_PATH\n' +
+          '  to a Chrome/Chromium binary to get one-command --pdf.)\n');
+        if (has('open')) openFile(r.htmlFile);
+      }
+    }).catch((e) => { console.error('\n  PDF export failed: ' + (e && e.message ? e.message : e) + '\n'); process.exit(1); });
+  } else {
+    process.exit(0);
+  }
+  return; // don't fall through to the text/CSV report
+}
 
 function toCsv(rows) {
   if (!rows.length) return '';

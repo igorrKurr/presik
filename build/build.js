@@ -83,6 +83,12 @@ async function runtimeNode() {
     // node: builtins (http, fs, node:sqlite, node:sea, …) stay external
     // automatically for platform:node. Marp is never required, only spawned,
     // so it's not pulled in.
+    //
+    // puppeteer-core (the CLI's --pdf path) is a heavy source/npm-only dep, kept
+    // OUT of the binary on purpose — same lean stance as leaving Marp out. In the
+    // packaged binary its require throws and report-export.js falls back to
+    // writing the HTML for you to print; from source/npm it resolves normally.
+    external: ['puppeteer-core'],
   });
 
   console.log('• generating SEA blob (with embedded assets)…');

@@ -206,6 +206,7 @@ University Wi-Fi often isolates clients, so phones can't reach your laptop. Opti
 ## Results and analytics
 
 - **During class:** the distribution on your `/host` screen.
+- **After class — the interactive report at `/report?key=…`** — a filterable analytics surface over the whole database: KPI tiles, a correct-%-over-time trend, per-question distributions (the correct option in green), a question × group heatmap, group and session comparison. It **adapts to scale** — one session drills into its questions; a course compares its sessions; several courses get an overview — and lets you filter by course → session → group. Teacher-key only (it shows answers), same as `/host`. **Export PDF** on the page prints those exact visuals.
 - **`GET /api/export?key=…`** — JSON of all answers in the current run.
 - **On `Ctrl+C`:** answers are also written to `.presik/results/<session>-<group>-<date>.json` — a one-off snapshot of a single class.
 - **Every answer is written immediately** to a shared SQLite database, `.presik/data.db` — one file for the whole content root (all courses/sessions/groups).
@@ -219,9 +220,11 @@ presik-report --session s01                        # per question: % correct, br
 presik-report --session web-dev/s01 --group "3-A"  # one group
 presik-report --course web-dev                     # all sessions of one course
 presik-report --csv > answers.csv                  # everything as CSV — for pandas/Excel/…
+presik-report --session s01 --html report.html     # the same interactive report as /report, standalone & offline
+presik-report --session s01 --pdf  report.pdf      # same visuals straight to PDF (add --open to open it)
 ```
 
-(From the packaged binary, the same thing is `presik report …`.) `.presik/` is git-ignored — no data leaks into a content repo, and there's none to leak anyway: answers are anonymous.
+`--html`/`--pdf` render the very page the server serves at `/report` (same shared model, identical visuals) — `--html` bakes the data in so the file opens with no server; `--pdf` prints it via a headless Chrome if one is installed (set `CHROME_PATH` to point at a specific binary), otherwise it writes the `.html` and tells you to Print → Save as PDF. (From the packaged binary, the same thing is `presik report …`; `--pdf` there falls back to that `.html`, since the binary ships no browser.) `.presik/` is git-ignored — no data leaks into a content repo, and there's none to leak anyway: answers are anonymous.
 
 ---
 

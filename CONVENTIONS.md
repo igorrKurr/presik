@@ -6,7 +6,7 @@ This document is the contract by which `presik` (the engine) finds and displays 
 
 | | Engine | Content |
 |---|---|---|
-| What it is | `server.js`, `db.js`, `report.js`, `bin/`, `public/` | your `deck.marp.md` + `questions.json` |
+| What it is | `server.js`, `db.js`, `report.js` (+ `report-data.js`, `report-export.js`), `bin/`, `public/` | your `deck.marp.md` + `questions.json` |
 | Where it lives | in the `presik` package (`node_modules/` once installed) | anywhere on disk — your own folder, a separate repo, a USB stick |
 | Who edits it | the package's authors (bugfixes, new features arrive via package updates) | you, for every new class |
 | Versioned together? | no | no — content and engine are independent |

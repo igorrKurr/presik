@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>presik — analytics</title>
+<!-- presik analytics report.
+     Two ways in: served live at /report (host key) it fetches /api/report and
+     is fully interactive; exported by the CLI (presik-report --html) the model
+     is baked into window.__REPORT__ right here and the page renders offline with
+     identical visuals. The PRESIK_REPORT marker below is where the CLI injects
+     that data — same idea as the config marker deck.html uses. -->
+<link rel="stylesheet" href="/report.css">
+<!--PRESIK_REPORT-->
+</head>
+<body>
+  <div class="wrap">
+    <header class="top">
+      <div class="brand"><h1 id="title">Analytics</h1><span class="scope" id="scope"></span></div>
+      <div style="display:flex;gap:8px">
+        <button class="btn" id="tableToggle" aria-pressed="false" title="Show the underlying numbers as tables">Table view</button>
+        <button class="btn primary" id="exportBtn" title="Print — choose “Save as PDF” for a file with these exact visuals">Export PDF</button>
+      </div>
+    </header>
+    <div class="sub" id="sub"></div>
+    <div class="controls" id="controls"></div>
+    <main id="app"><div class="loading">Loading…</div></main>
+    <div class="foot" id="foot"></div>
+  </div>
+  <div id="tip"></div>
+  <script src="/report.js"></script>
+</body>
+</html>

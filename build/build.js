@@ -81,14 +81,17 @@ async function runtimeNode() {
     outfile: BUNDLE,
     logLevel: 'warning',
     // node: builtins (http, fs, node:sqlite, node:sea, …) stay external
-    // automatically for platform:node. Marp is never required, only spawned,
-    // so it's not pulled in.
+    // automatically for platform:node. Marp is only ever spawned, never
+    // required — but server.js does `require.resolve` it to locate the CLI, and
+    // that IS a static reference esbuild would otherwise follow and bundle. Keep
+    // it external so the resolve stays a runtime call: in the binary it throws,
+    // MARP_AVAILABLE goes false, and /slides degrades as designed.
     //
     // puppeteer-core (the CLI's --pdf path) is a heavy source/npm-only dep, kept
     // OUT of the binary on purpose — same lean stance as leaving Marp out. In the
     // packaged binary its require throws and report-export.js falls back to
     // writing the HTML for you to print; from source/npm it resolves normally.
-    external: ['puppeteer-core'],
+    external: ['puppeteer-core', '@marp-team/marp-cli/marp-cli.js'],
   });
 
   console.log('• generating SEA blob (with embedded assets)…');

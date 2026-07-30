@@ -5,7 +5,7 @@
 //   • local widget (srcdoc / a bundle served by presik):
 //       <script src="/widget-sdk.js"></script>          → global PresikWidget
 //   • an external game project with its own build/tests:
-//       import PresikWidget from '@igorrkurr/presik-widget'   → bundled by npm
+//       import PresikWidget from 'presik-widget'   → bundled by npm
 //
 // The game side:
 //   const quiz = await PresikWidget.connect();

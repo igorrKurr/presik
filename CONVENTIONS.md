@@ -147,7 +147,7 @@ Because presik usually runs on a classroom LAN with no internet, **`src` (a vend
 </script>
 ```
 
-A `srcdoc`/`src` widget loads it with `<script src="/widget-sdk.js">`; an **external project** installs it from GitHub Packages (`import PresikWidget from '@igorrkurr/presik-widget'`) so it builds and tests independently — see `packages/widget-sdk/`. That file also exports **`PresikWidget.mockHost(iframe, …)`** — a fake quiz host, so the game project can assert its integration (`host.answers` ⇢ what it reported) in its own CI, with no presik server involved.
+A `srcdoc`/`src` widget loads it with `<script src="/widget-sdk.js">`; an **external project** installs it from npm (`npm i presik-widget`, then `import PresikWidget from 'presik-widget'`) so it builds and tests independently — see `packages/widget-sdk/`. That file also exports **`PresikWidget.mockHost(iframe, …)`** — a fake quiz host, so the game project can assert its integration (`host.answers` ⇢ what it reported) in its own CI, with no presik server involved.
 
 ### Widget packages — shipping an independently-built game
 

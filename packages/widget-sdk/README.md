@@ -1,4 +1,4 @@
-# @igorrkurr/presik-widget
+# presik-widget
 
 Client SDK for building **presik** quiz widgets — interactive question front-ends
 (a richer form, a branching adventure, a small game) that run in a sandboxed
@@ -12,21 +12,22 @@ project with a build and tests.
 
 ## Install
 
-The package is published to **GitHub Packages**, so point the `@igorrkurr` scope
-at that registry (`.npmrc`):
+```bash
+npm install presik-widget
+```
+
+Also published to **GitHub Packages** as `@igorrkurr/presik-widget` (same code,
+scoped because that registry requires the repo owner's scope). To use that copy
+instead, point the scope at it in `.npmrc`:
 
 ```
 @igorrkurr:registry=https://npm.pkg.github.com
 ```
 
-```bash
-npm install @igorrkurr/presik-widget
-```
-
 ## Use (the game side)
 
 ```js
-import PresikWidget from '@igorrkurr/presik-widget';
+import PresikWidget from 'presik-widget';
 
 const quiz = await PresikWidget.connect();   // does the ready/init handshake
 quiz.config;        // author config from questions.json (e.g. { seed: 42 })
@@ -46,7 +47,7 @@ button, so it must be a legal answer for the declared kind.
 with a plain iframe and no presik server:
 
 ```js
-import PresikWidget from '@igorrkurr/presik-widget';
+import PresikWidget from 'presik-widget';
 
 const host = PresikWidget.mockHost(iframe, { answer: 'choice', options: [{ id: 'east' }] });
 // … drive the game so the player exits east …

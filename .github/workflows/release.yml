@@ -157,3 +157,87 @@ jobs:
         working-directory: packages/widget-sdk
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Publish the same two packages to the PUBLIC npmjs registry, so `npx presik`
+  # and `npm i presik` work for people with no GitHub Packages auth configured.
+  # Runs alongside publish-package (GitHub Packages) — both registries get every
+  # release. Both packages go out UNSCOPED here — `presik` and `presik-widget`
+  # — whereas GitHub Packages requires the owner scope (`@igorrkurr/…`). Same
+  # code, two names per package; each job renames for its own registry.
+  #
+  # Auth is npm Trusted Publishing (OIDC) — no token, by necessity: npm
+  # permanently revoked classic tokens on 2025-12-09, and granular write tokens
+  # now expire after 90 days, which is a rotation treadmill for a release
+  # pipeline. OIDC mints a short-lived, job-scoped credential instead, so there
+  # is no secret to leak or rotate.
+  #
+  # ONE-TIME BOOTSTRAP (both packages are new on npmjs). npm will not let you
+  # attach a trusted publisher to a package that doesn't exist yet, so OIDC
+  # cannot perform a package's FIRST publish. Chicken-and-egg; break it once:
+  #
+  #   1. npmjs.com → Access Tokens → Granular, write, scope "All packages".
+  #   2. Locally, from a clean checkout:
+  #        npm pkg delete private && npm publish --access public
+  #        cd packages/widget-sdk
+  #        npm pkg set name=presik-widget
+  #        npm pkg delete publishConfig.registry && npm publish --access public
+  #      (discard those package.json edits afterwards — CI redoes them itself)
+  #   3. For EACH package on npmjs.com → Settings → Trusted Publisher →
+  #      GitHub Actions:  repository igorrKurr/presik,  workflow release.yml
+  #   4. Delete the token from step 1. Nothing needs it again.
+  #
+  # Until step 3 is done this job fails — deliberately loudly, and harmlessly:
+  # the binaries and GitHub Packages have already shipped by the time it runs.
+  publish-npmjs:
+    needs: [gate, build]
+    if: needs.gate.outputs.release == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # mint the OIDC token npm exchanges for publish rights
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          registry-url: 'https://registry.npmjs.org'
+      # OIDC publishing needs npm >= 11.5.1; some Node 24.x lines still bundle an
+      # older 11.x, so pin the floor explicitly rather than hope.
+      - name: Ensure an OIDC-capable npm
+        run: |
+          set -euo pipefail
+          need=11.5.1
+          have=$(npm -v)
+          if [ "$(printf '%s\n%s\n' "$need" "$have" | sort -V | head -1)" != "$need" ]; then
+            echo "npm $have < $need — upgrading."
+            npm install -g npm@latest
+          fi
+          npm -v
+      - name: Prepare packages for npmjs
+        env:
+          TAG: ${{ needs.gate.outputs.tag }}
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+          # Drop the private guard (it exists to stop an ACCIDENTAL publish; this
+          # one is deliberate). Name stays `presik`.
+          npm pkg delete private
+          npm version --no-git-tag-version --allow-same-version "$version"
+          # The widget SDK is checked in as @igorrkurr/presik-widget because
+          # GitHub Packages demands the repo owner's scope. npmjs has no such
+          # rule, and the owner's npm username is `ihorrkurr` (not `igorrkurr`),
+          # so that scope isn't even ours to publish under here — go unscoped,
+          # pairing with the unscoped `presik`. Also clear the publishConfig
+          # registry pin so this lands on npmjs.
+          cd packages/widget-sdk
+          npm pkg set name=presik-widget
+          npm pkg delete publishConfig.registry
+          npm version --no-git-tag-version --allow-same-version "$version"
+      # No NODE_AUTH_TOKEN on either publish — OIDC covers auth. Provenance
+      # attestations are generated automatically (public repo + public package),
+      # so --provenance is not passed either.
+      - name: Publish presik
+        run: npm publish --access public
+      - name: Publish the widget SDK
+        run: npm publish --access public
+        working-directory: packages/widget-sdk

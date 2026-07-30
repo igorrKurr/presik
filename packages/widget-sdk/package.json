@@ -1,6 +1,6 @@
 {
   "name": "@igorrkurr/presik-widget",
-  "version": "4.3.0",
+  "version": "4.4.0",
   "description": "Client SDK for building presik quiz widgets — interactive question front-ends that report an answer to the quiz over postMessage.",
   "main": "index.js",
   "files": [

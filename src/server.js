@@ -41,7 +41,6 @@ const { buildReport } = require('./report-data');
 const { loadConfig } = require('./config');
 const { readQuestions, saveQuestions, restoreQuestions, listHistory, readHistory } = require('./editor');
 
-const ENGINE_DIR = path.resolve(__dirname, '..'); // engine root — src/ sits under it, node_modules is a sibling
 const VERSION = require('../package.json').version;
 
 // ---------------------------------------------------------------- arguments
@@ -263,12 +262,22 @@ const COOP_COEP = { 'Cross-Origin-Opener-Policy': 'same-origin', 'Cross-Origin-E
 // node_modules/.bin/marp shim: the shim is a shell script on macOS/Linux and
 // a .cmd on Windows, and execFileSync on the extensionless name can't launch
 // the .cmd — so the old approach silently broke slide builds on Windows.
-const MARP_JS = path.join(ENGINE_DIR, 'node_modules', '@marp-team', 'marp-cli', 'marp-cli.js');
-// Marp is a devDependency and only needed to build /slides from deck.marp.md.
-// It's absent in the packaged single-file binary (and when installed with
-// --omit=dev), so slide-building degrades gracefully: everything else — phones,
-// /host, /present — works, and /slides explains how to get Marp support.
-const MARP_AVAILABLE = fs.existsSync(MARP_JS);
+// Resolve it rather than joining a path under the engine root: when presik is
+// installed as a dependency, npm HOISTS marp-cli to the consumer's top-level
+// node_modules, so <engine>/node_modules/@marp-team/… doesn't exist and the old
+// existsSync check reported "no Marp" on a perfectly good install.
+// require.resolve walks the whole node_modules chain, so it finds Marp whether
+// it's hoisted, nested, or installed globally alongside presik.
+let MARP_JS = null;
+try {
+  MARP_JS = require.resolve('@marp-team/marp-cli/marp-cli.js');
+} catch (_) {}
+// Marp is an optionalDependency: a normal install gets it and /slides works,
+// but it's absent from the packaged single-file binary and from an install run
+// with --omit=optional. Slide-building degrades gracefully in that case:
+// everything else — phones, /host, /present, PDF decks — works, and /slides
+// explains how to get Marp support.
+const MARP_AVAILABLE = MARP_JS !== null;
 // A session's deck is Marp markdown or a PDF (later: pptx/key converted to a
 // PDF under the hood). Marp wins if both are present. Either way presik owns
 // navigation on /slides, so slides and quiz stay in lockstep.
@@ -815,7 +824,7 @@ const server = http.createServer(async (req, res) => {
     if (!MARP_AVAILABLE)
       return send(res, 501, 'text/plain; charset=utf-8',
         'Marp slide-building isn\'t available in this build.\n' +
-        'Use a PDF deck (deck.pdf) instead, or install presik via npm (which includes Marp).');
+        'Use a PDF deck (deck.pdf) instead, or add Marp:  npm i @marp-team/marp-cli');
     try {
       const htmlPath = ensureSlideHtml();
       let html = fs.readFileSync(htmlPath, 'utf8');
@@ -1090,7 +1099,7 @@ function banner() {
   console.log('  Report:    ' + base + '/report?key=' + KEY + '  (analytics across runs/groups/courses — keep private)');
   if (deckType === 'marp' && MARP_AVAILABLE) console.log('  Slides:    ' + base + '/slides?key=' + KEY + '  (without ?key= — view only, no control)');
   else if (deckType === 'pdf') console.log('  Slides:    ' + base + '/slides?key=' + KEY + '  (PDF deck; without ?key= — view only)');
-  else if (deckType === 'marp') console.log('  Slides:    (deck.marp.md found, but Marp isn\'t in this build — use a PDF deck, or install via npm)');
+  else if (deckType === 'marp') console.log('  Slides:    (deck.marp.md found, but Marp isn\'t in this build — use a PDF deck, or: npm i @marp-team/marp-cli)');
   if (!deckType) console.log('  Projector: ' + base + '/present  (QR + live results — questions-only session)');
   if (!KEY_GIVEN)
     console.log('\n  Key:       ' + KEY + '  (random this run; anyone with it controls the quiz — pin your own with --key)');

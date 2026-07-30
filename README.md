@@ -37,7 +37,7 @@ Because it's one fullscreen web page, the same `/slides` is what you put on the 
 
 ## Install
 
-Pick whichever fits — all three run the same engine:
+Pick whichever fits — they all run the same engine:
 
 **1. Single-file binary — no Node, no install.** Download the `presik` executable for your OS from Releases and run it:
 
@@ -48,7 +48,16 @@ chmod +x presik            # macOS/Linux (on Windows it's just presik.exe)
 
 It bundles its own runtime, so there's nothing to install — ideal for the PowerPoint/Keynote workflow. The only thing the binary leaves out is **Marp slide-building** (`/slides`); for that use a Node install below. `presik new` and `presik report` work from the binary too.
 
-**2. npm / from source — needs Node 22.5+.** Includes Marp. (presik uses Node's built-in SQLite, so there's still nothing to compile — no C++ toolchain, no `node-gyp`.)
+**2. npm — needs Node 22.5+.** Includes Marp, so `/slides` works out of the box. (presik uses Node's built-in SQLite, so there's still nothing to compile — no C++ toolchain, no `node-gyp`.)
+
+```bash
+npx presik                 # run it straight from a folder of sessions
+npm i -g presik            # or install `presik` and `presik-report` globally
+```
+
+Marp ships as an **optional** dependency. It comes along by default; if you install with `--omit=optional` (or it fails to build), presik still runs — you just get the same "no Marp" degradation as the binary, and PDF/PowerPoint/Keynote decks are unaffected.
+
+**3. From source — needs Node 22.5+.**
 
 ```bash
 git clone <repo> && cd presik

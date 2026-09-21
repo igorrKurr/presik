@@ -20,7 +20,6 @@
 <body>
   <div id="live"><div class="conn">Connecting…</div></div>
 <script>
-  var QR_SRC = location.origin + '/qr.svg';
   var LAST = null;
   var liveEl = document.getElementById('live');
 
@@ -30,9 +29,12 @@
     });
   }
   function joinUrl() { return (LAST && LAST.joinUrl) || ''; }
+  // Keyed on the join URL: it changes once --tunnel comes up, and an <img> with an
+  // unchanged src would keep showing the stale (LAN) QR from the browser's cache.
+  function qrSrc() { return '/qr.svg?u=' + encodeURIComponent(joinUrl()); }
   function bar(pct) { return '<div class="quiz-bar"><div class="quiz-bar-fill" style="width:' + pct + '%"></div></div>'; }
   function joinBlock(size) {
-    return '<div class="quiz-join quiz-join-' + size + '"><img src="' + QR_SRC + '" alt="Join QR code">' +
+    return '<div class="quiz-join quiz-join-' + size + '"><img src="' + qrSrc() + '" alt="Join QR code">' +
       (size === 'lg' ? '<div class="quiz-join-title">Scan to join</div>' : '') +
       (joinUrl() ? '<div class="quiz-join-url">' + esc(joinUrl()) + '</div>' : '') + '</div>';
   }

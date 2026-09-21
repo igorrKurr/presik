@@ -31,7 +31,8 @@
     var url = (last && last.joinUrl) || '';
     return (
       '<div class="quiz-join quiz-join-' + size + '">' +
-      '<img src="/qr.svg" alt="Join QR code">' +
+      // keyed on the URL — it changes once --tunnel is up; a same-src <img> would stay stale
+      '<img src="/qr.svg?u=' + encodeURIComponent(url) + '" alt="Join QR code">' +
       (size === 'lg' ? '<div class="quiz-join-title">Scan to join</div>' : '') +
       (url ? '<div class="quiz-join-url">' + esc(url) + '</div>' : '') +
       '</div>'

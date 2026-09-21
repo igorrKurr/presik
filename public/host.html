@@ -55,7 +55,7 @@
   <div class="split">
     <div class="main" id="app"><div class="wait">The quiz hasn't started yet.</div></div>
     <div class="side">
-      <img src="/qr.svg" alt="QR code">
+      <img id="qr" src="/qr.svg" alt="QR code">
       <div class="url" id="url"></div>
       <div class="cap">Scan or type in the address</div>
       <div class="cap" id="ver" style="margin-top:14px;opacity:.5"></div>
@@ -156,6 +156,9 @@
     document.getElementById('title').textContent = s.title;
     document.getElementById('pos').textContent = s.index >= 0 ? (s.index + 1) + ' / ' + s.total : '';
     document.getElementById('url').textContent = s.joinUrl || '';
+    // re-fetch the QR when the join URL changes (LAN → --tunnel); same src would stay cached
+    const qrSrc = '/qr.svg?u=' + encodeURIComponent(s.joinUrl || '');
+    if (document.getElementById('qr').getAttribute('src') !== qrSrc) document.getElementById('qr').setAttribute('src', qrSrc);
     document.getElementById('ver').textContent = 'v' + (s.version || '?');
 
     if (!s.question) {

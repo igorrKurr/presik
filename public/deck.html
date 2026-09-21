@@ -61,9 +61,15 @@
       ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
   function joinUrl() { return (last && last.joinUrl) || ''; }
+  // Keyed on the join URL: it changes once --tunnel comes up, and an <img> with an
+  // unchanged src would keep showing the stale (LAN) QR from the browser's cache.
+  function qrSrc() { return '/qr.svg?u=' + encodeURIComponent(joinUrl()); }
   function bar(pct) { return '<div class="quiz-bar"><div class="quiz-bar-fill" style="width:' + pct + '%"></div></div>'; }
+  function renderChip() {
+    chip.innerHTML = '<img src="' + qrSrc() + '" alt="Join">' + (joinUrl() ? '<span>' + esc(joinUrl()) + '</span>' : '');
+  }
   function joinSlot(size) {
-    return '<div class="quiz-join quiz-join-' + size + '"><img src="/qr.svg" alt="Join QR code">' +
+    return '<div class="quiz-join quiz-join-' + size + '"><img src="' + qrSrc() + '" alt="Join QR code">' +
       (size === 'lg' ? '<div class="quiz-join-title">Scan to join</div>' : '') +
       (joinUrl() ? '<div class="quiz-join-url">' + esc(joinUrl()) + '</div>' : '') + '</div>';
   }
@@ -133,7 +139,7 @@
       canvas.style.display = 'block';
       quizEl.style.display = 'none';
       chip.style.display = 'flex';
-      chip.innerHTML = '<img src="/qr.svg" alt="Join">' + (joinUrl() ? '<span>' + esc(joinUrl()) + '</span>' : '');
+      renderChip();
       renderPage(s.page);
     } else {
       canvas.style.display = 'none';
@@ -202,7 +208,7 @@
     }, 5000);
   }
   // keyless: audience visibility, and not counted as a student
-  live('?embed=1', d => { try { last = JSON.parse(d); } catch (_) { return; } if (steps[step] && steps[step].t !== 'page') render(); });
+  live('?embed=1', d => { try { last = JSON.parse(d); } catch (_) { return; } if (steps[step] && steps[step].t !== 'page') render(); else renderChip(); });
 
   window.addEventListener('keydown', e => {
     if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') { e.preventDefault(); go(step + 1); }

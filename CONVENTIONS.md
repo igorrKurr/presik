@@ -256,6 +256,8 @@ presik new s02 --dir <path>                   # content root isn't the current d
 
 ## Optional flags (all override the default)
 
+Full reference for every command and flag: [`docs/CLI.md`](docs/CLI.md) (or `presik help run`).
+
 ```bash
 presik <session> --dir <path>     # content root isn't the current directory
 presik <session> --port 8080

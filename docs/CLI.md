@@ -1,0 +1,264 @@
+# presik CLI reference
+
+Every command, flag, setting and environment variable presik understands. For the content format (`questions.json`, decks, widgets) see [`CONVENTIONS.md`](../CONVENTIONS.md); for a guided walkthrough see the [README](../README.md).
+
+The same information is available in the terminal:
+
+```bash
+presik help                # overview
+presik help <topic>        # run · new · edit · widget · report · config
+presik --help              # same as `presik help`
+presik <command> --help    # same as `presik help <command>`
+presik --version           # print the version (also -v)
+```
+
+**Contents**
+
+- [Commands at a glance](#commands-at-a-glance)
+- [`presik [<session>]` — run a class](#presik-session--run-a-class)
+- [`presik new` — scaffold a session](#presik-new--scaffold-a-session)
+- [`presik edit` — edit questions in the browser](#presik-edit--edit-questions-in-the-browser)
+- [`presik widget` — widget packages](#presik-widget--widget-packages)
+- [`presik report` / `presik-report` — analytics](#presik-report--presik-report--analytics)
+- [`presik.config.json` — saved settings](#presikconfigjson--saved-settings)
+- [Environment variables](#environment-variables)
+- [Exit codes](#exit-codes)
+
+---
+
+## Commands at a glance
+
+| Command | What it does |
+|---|---|
+| `presik [<session>] [options]` | Run a session. With no session: run the content root if it's the only one, otherwise list every session found. |
+| `presik new <session> [options]` | Scaffold `questions.json` (+ `deck.marp.md`) from the templates. |
+| `presik edit <session> [options]` | Run the session with the browser question editor opened. |
+| `presik widget add <dist> [options]` | Vendor a built widget bundle into `widgets/`. |
+| `presik widget ls [options]` | List vendored widget packages. |
+| `presik report [options]` | Analyse saved answers. Identical to `presik-report`. |
+| `presik help [<topic>]` | Show help, optionally for one topic. |
+| `presik --version`, `-v` | Print the version. |
+
+**Content root.** Every command works relative to a *content root* — the current directory, or whatever `--dir <path>` points at. A *session* is any folder under it (at any depth) that contains `questions.json` and/or `deck.marp.md`; its name is its path, e.g. `s01` or `web-dev/s01`.
+
+**Flag syntax.** Flags are `--name value` (space-separated; `--name=value` is not supported). A value can't start with `--`.
+
+---
+
+## `presik [<session>]` — run a class
+
+```bash
+presik [<session>] [options]
+```
+
+Starts the server for one session and prints the links to open: `Students:` (phones), `Teacher:` (`/host`, your private cockpit), `Slides:` (the projector, when the session has a deck) or `Projector:` (`/present`, questions-only sessions), and `Editor:`. Stop with `Ctrl+C` — answers are saved as they arrive, and a crashed run resumes on the next start.
+
+A deck can be `deck.marp.md` (needs the Marp optional dependency — not in the single-file binary), `deck.pdf`, `deck.pptx` or `deck.key` (converted to PDF with PowerPoint/Keynote when installed, otherwise LibreOffice).
+
+### Options
+
+| Flag | Value | Default | Description |
+|---|---|---|---|
+| `--dir` | path | current directory | Content root. The only setting `presik.config.json` can't set. |
+| `--port` | number | `3000` | HTTP port. If it's taken, presik suggests the next one. |
+| `--host` | IP address | auto-detected | LAN address advertised in the links and QR. Auto-detection skips VPN/virtual interfaces; use this when students can't reach the printed link. |
+| `--key` | word | random each run | Teacher key guarding `/host`, `/slides` control, `/report` and `/edit`. Pin one to reuse links across a course. |
+| `--group` | name | asked interactively | Group/cohort tag stored with every answer of this run. |
+| `--no-group` | — | off | Don't ask for a group. (Also skipped automatically when stdin isn't a terminal.) |
+| `--tunnel` | — | off | Expose a public `https://…trycloudflare.com` URL via `cloudflared` and point the QR at it. Needs `cloudflared` on `PATH`; without it presik stays on the LAN. |
+| `--qr` | file path | `<session>/join-qr.svg` | Where to write the join-QR SVG. |
+| `--db` | file path | `<content-root>/.presik/data.db` | SQLite database answers are written to. |
+| `-h`, `--help` | — | — | Show help for this command. |
+
+### Examples
+
+```bash
+presik                                   # run the only session, or list them
+presik s01                               # run ./s01/
+presik web-dev/s01 --group "3-A"         # nested session, tagged with a group
+presik s01 --port 8080 --key myword      # fixed port and a memorable key
+presik s01 --host 192.168.1.42           # advertise a specific LAN address
+presik s01 --dir ~/courses/web-dev       # content root elsewhere
+presik s01 --tunnel                      # students join over the internet (e.g. a Zoom class)
+presik s01 --no-group --db /tmp/test.db  # a throwaway rehearsal
+```
+
+### Pages the server exposes
+
+| Path | Audience | Notes |
+|---|---|---|
+| `/` | students | Answer on a phone. |
+| `/host?key=…` | you | Live distribution before reveal, private `hint`, controls. Never project it. |
+| `/slides?key=…` | the room | Deck with the quiz interleaved; arrow keys drive both. Without `?key=` it's view-only. |
+| `/present` | the room | For questions-only sessions: join QR, live counter, results. |
+| `/report?key=…` | you | Interactive analytics over the whole database. |
+| `/edit?key=…` | you | The question editor. |
+| `/api/export?key=…` | you | JSON of every answer in the current run. |
+
+---
+
+## `presik new` — scaffold a session
+
+```bash
+presik new <session> [options]
+```
+
+Creates `<session>/questions.json` and `<session>/deck.marp.md` from the built-in templates. The example questions already carry `slide` numbers that match the template deck. Refuses to overwrite either file if it exists.
+
+| Flag | Value | Default | Description |
+|---|---|---|---|
+| `--title` | text | `S00 — <session>` | Quiz title written into `questions.json`. |
+| `--questions-only` | — | off | Skip `deck.marp.md` — for PDF/PowerPoint/Keynote decks. |
+| `--dir` | path | current directory | Content root. |
+
+```bash
+presik new s02
+presik new web-dev/s02 --title "S02 — Status codes"
+presik new lecture-05 --questions-only       # then drop lecture-05/deck.pptx in
+```
+
+---
+
+## `presik edit` — edit questions in the browser
+
+```bash
+presik edit <session> [options]
+```
+
+Runs the normal server for `<session>` and opens `/edit` in your browser: a live editor for `questions.json` with autosave, drag-to-reorder, one-tap question-type switching, undo (`Cmd/Ctrl+Z`) and a restorable version history. The session folder and `questions.json` don't need to exist — the first save creates them, and a broken `questions.json` opens in the editor instead of stopping the launch.
+
+Accepts every [run option](#options) (`--port`, `--key`, `--dir`, …).
+
+```bash
+presik edit s01
+presik edit s09 --port 3001      # new session, alongside a running class on 3000
+```
+
+Details: [`CONVENTIONS.md` → The question editor](../CONVENTIONS.md#the-question-editor--edit).
+
+---
+
+## `presik widget` — widget packages
+
+```bash
+presik widget add <path-to-built-dist> [--force] [--dir <path>]
+presik widget ls [--dir <path>]
+```
+
+Copies an independently-built interactive widget (a game, a simulation…) into `<content-root>/widgets/<name>@<version>/`, so a `widget` question can reference it by package name and the class runs fully offline. The bundle must have a `widget.json` manifest at its root.
+
+| Subcommand / flag | Description |
+|---|---|
+| `add <dir>` | Vendor the built bundle in `<dir>`. |
+| `ls` (alias `list`) | List vendored packages. |
+| `--force` | With `add`: overwrite an already-installed version. |
+| `--dir <path>` | Content root (default: current directory). |
+
+```bash
+presik widget add ../dungeon/dist
+presik widget add ../dungeon/dist --force
+presik widget ls
+```
+
+Manifest format: [`CONVENTIONS.md` → Widget packages](../CONVENTIONS.md#widget-packages--shipping-an-independently-built-game).
+
+---
+
+## `presik report` / `presik-report` — analytics
+
+```bash
+presik report [options]
+presik-report [options]          # same thing, separate binary from the npm package
+```
+
+Reads the answers database directly — no server needed. With no `--session` it lists every run.
+
+### Filters
+
+| Flag | Value | Description |
+|---|---|---|
+| `--session` | session path | One session, the same path you ran it with (e.g. `web-dev/s01`). |
+| `--course` | course name | Every session of one course. |
+| `--group` | group name | One group/cohort. |
+
+### Output modes
+
+| Flag | Value | Description |
+|---|---|---|
+| *(none)* | — | Text: list of runs, or (with `--session`) % correct per question, broken down by group; average for `scale` questions. |
+| `--csv` | — | Every matching answer as CSV on stdout. |
+| `--html` | file (optional) | Standalone, offline copy of the interactive `/report` page. Default file: `presik-report-<label>.html`. |
+| `--pdf` | file (optional) | The same visuals as PDF via a headless Chrome/Chromium. If none is found (or from the single-file binary), writes the `.html` instead and asks you to Print → Save as PDF. |
+| `--open` | — | With `--html`/`--pdf`: open the file once written. |
+
+### Location
+
+| Flag | Value | Default |
+|---|---|---|
+| `--dir` | path | current directory |
+| `--db` | file path | `<content-root>/.presik/data.db` |
+
+### Examples
+
+```bash
+presik report                                          # list all runs
+presik report --session s01                            # per question, by group
+presik report --session web-dev/s01 --group "3-A"      # one group
+presik report --course web-dev                         # a whole course
+presik report --csv > answers.csv                      # everything, for pandas/Excel
+presik report --session s01 --html report.html         # offline interactive report
+presik report --session s01 --pdf report.pdf --open    # PDF, then open it
+```
+
+---
+
+## `presik.config.json` — saved settings
+
+Optional JSON file holding defaults for the [run options](#options), so you don't retype them every week. It can live at the content root (whole project) and/or inside a session folder (that session only).
+
+| Key | Type | Equivalent flag |
+|---|---|---|
+| `port` | number | `--port` |
+| `host` | string | `--host` |
+| `key` | string | `--key` |
+| `group` | string | `--group` |
+| `noGroup` | boolean | `--no-group` |
+| `tunnel` | boolean | `--tunnel` |
+| `qr` | path | `--qr` |
+| `db` | path | `--db` |
+
+```json
+{ "port": 8080, "key": "web-dev-2026", "group": "3-A" }
+```
+
+**Precedence:**
+
+```
+CLI flag  >  <session>/presik.config.json  >  <root>/presik.config.json  >  built-in default
+```
+
+- `--dir` can't be set in the file — it decides where the file is looked up.
+- Relative `qr`/`db` paths resolve against the config file's own directory (a path typed as a flag resolves against the current directory).
+- `null` means "not set", so a session file can defer a key back to the root file.
+- Unknown keys, wrong types or an invalid port stop the launch with a message listing every problem.
+- The startup banner shows which config files were loaded.
+
+---
+
+## Environment variables
+
+| Variable | Used by | Effect |
+|---|---|---|
+| `CHROME_PATH` | `report --pdf` | Chrome/Chromium/Edge binary to render the PDF with. |
+| `PUPPETEER_EXECUTABLE_PATH` | `report --pdf` | Same as `CHROME_PATH`; checked first. |
+| `NO_COLOR` | `help` | Disable bold/dim styling in help output. |
+| `PRESIK_NODE_VERSION` | `npm run build` | Node version to download for the single-file binary when the local Node can't be used. |
+
+---
+
+## Exit codes
+
+| Code | Meaning |
+|---|---|
+| `0` | Success (including `help`, `--version`, and listing sessions). |
+| `1` | Bad input or environment: unknown help topic, missing/invalid `questions.json`, invalid `presik.config.json`, session outside the content root, port in use, missing database for `report`, Node older than 22.5. |

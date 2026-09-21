@@ -4,7 +4,7 @@ Live in-class quizzes for interactive lectures. Students answer from their phone
 
 It runs **on your own machine, on the classroom network** — no accounts, no cloud, no student data leaving the room.
 
-The engine (server, deck rendering, analytics) and your content (a class's slides and questions) are separate. Install the engine once, then drop a `questions.json` (and, optionally, a deck — `deck.marp.md`, `deck.pdf`, `deck.pptx`, or `deck.key`) into a folder — it works whether that's a single quiz, a whole course, or several courses at once. Full format contract: [`CONVENTIONS.md`](CONVENTIONS.md).
+The engine (server, deck rendering, analytics) and your content (a class's slides and questions) are separate. Install the engine once, then drop a `questions.json` (and, optionally, a deck — `deck.marp.md`, `deck.pdf`, `deck.pptx`, or `deck.key`) into a folder — it works whether that's a single quiz, a whole course, or several courses at once. Full format contract: [`CONVENTIONS.md`](CONVENTIONS.md). Every command and flag: [`docs/CLI.md`](docs/CLI.md), or `presik help` in the terminal.
 
 ---
 
@@ -109,7 +109,7 @@ Then it prints the addresses you'll open — this is your map for the whole clas
 - The **teacher key is random every run**. It's what stops anyone else on the Wi-Fi from driving or resetting your class, so treat the `/host` and `/slides` links as private. Want a stable one (e.g. reused across a course)? Pass `--key yourword`.
 - If students get a link they can't reach (a VPN or Docker network can hijack the auto-detected address), pass `--host 192.168.x.x` with your real LAN address — the terminal hints at this when it sees more than one candidate.
 
-All flags (`--dir`, `--port`, `--key`, `--host`, `--group`, `--tunnel`, `--qr`, `--db`) — see [`CONVENTIONS.md`](CONVENTIONS.md).
+All flags (`--dir`, `--port`, `--key`, `--host`, `--group`, `--tunnel`, `--qr`, `--db`) — run `presik help run`, or see the full CLI reference in [`docs/CLI.md`](docs/CLI.md).
 
 ---
 
@@ -279,3 +279,20 @@ The keys are just the flag names; a flag on the command line still wins, and a s
 > *If a noticeable share picked 5xx on a question about 404 — that's the classic "404 = the server broke" confusion. Slow down here.*
 
 It's not about grading anyone. It's about seeing, in ten seconds, **whether it's safe to move on** — and knowing what to do if it isn't.
+
+---
+
+## Claude skill
+
+[`skills/presik/`](skills/presik/) is an [Agent Skill](https://docs.claude.com/en/docs/agents-and-tools/agent-skills/overview) that teaches Claude how to use presik: writing and validating `questions.json` (with `slide` placement, misconception-based distractors and teacher `hint`s), scaffolding and running sessions, `presik.config.json`, widgets, and reading results with `presik report`.
+
+```bash
+# Claude Code — for you, in every project
+cp -r skills/presik ~/.claude/skills/presik
+# Claude Code — for everyone working in one content repo
+mkdir -p .claude/skills && cp -r skills/presik .claude/skills/presik
+# claude.ai / Claude Desktop — zip it, then upload under Settings → Capabilities → Skills
+(cd skills && zip -r ../presik-skill.zip presik)
+```
+
+Then just ask, e.g. *"turn lecture-05/deck.pdf into a presik quiz with 5 questions"* or *"which questions did group 3-A struggle with in s01?"*.

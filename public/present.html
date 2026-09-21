@@ -80,9 +80,27 @@
     return r + joinBlock('sm') + '</div>';
   }
 
-  var es = new EventSource('/api/stream?embed=1');
-  es.onmessage = function (e) { try { LAST = JSON.parse(e.data); liveEl.innerHTML = build(LAST); } catch (_) {} };
-  es.onerror = function () { if (!LAST) liveEl.innerHTML = '<div class="conn">Reconnecting…</div>'; };
+  // Live state over SSE, falling back to polling /api/poll when the stream stays
+  // silent — some proxies (Cloudflare quick tunnels, i.e. --tunnel) buffer it.
+  function live(qs, onData, onErr) {
+    var got = false, last = '';
+    var es = new EventSource('/api/stream' + qs);
+    es.onmessage = function (e) { got = true; onData(e.data); };
+    if (onErr) es.onerror = onErr;
+    setTimeout(function () {
+      if (got) return;
+      es.close();
+      (function poll() {
+        fetch('/api/poll' + qs, { cache: 'no-store' })
+          .then(function (r) { if (!r.ok) throw new Error(r.status); return r.text(); })
+          .then(function (t) { if (t !== last) { last = t; onData(t); } }, onErr || function () {})
+          .then(function () { setTimeout(poll, 1500); });
+      })();
+    }, 5000);
+  }
+  live('?embed=1',
+    function (d) { try { LAST = JSON.parse(d); liveEl.innerHTML = build(LAST); } catch (_) {} },
+    function () { if (!LAST) liveEl.innerHTML = '<div class="conn">Reconnecting…</div>'; });
 </script>
 </body>
 </html>

@@ -158,15 +158,46 @@
     // hidden until reveal, regardless of who's driving navigation.
     // embed=1 — this is the slides tab itself, not a real student, so it
     // shouldn't count towards "connected".
-    var es = new EventSource('/api/stream?embed=1');
-    es.onmessage = function (e) {
+    live('?embed=1', function (d) {
       try {
-        last = JSON.parse(e.data);
+        last = JSON.parse(d);
       } catch (_) {
         return;
       }
       renderAll();
+    });
+  }
+
+  // Live state over SSE, falling back to polling /api/poll when the stream stays
+  // silent — some proxies (Cloudflare quick tunnels, i.e. --tunnel) buffer it.
+  function live(qs, onData) {
+    var got = false;
+    var lastText = '';
+    var es = new EventSource('/api/stream' + qs);
+    es.onmessage = function (e) {
+      got = true;
+      onData(e.data);
     };
+    setTimeout(function () {
+      if (got) return;
+      es.close();
+      (function poll() {
+        fetch('/api/poll' + qs, { cache: 'no-store' })
+          .then(function (r) {
+            if (!r.ok) throw new Error(r.status);
+            return r.text();
+          })
+          .then(function (t) {
+            if (t !== lastText) {
+              lastText = t;
+              onData(t);
+            }
+          }, function () {})
+          .then(function () {
+            setTimeout(poll, 1500);
+          });
+      })();
+    }, 5000);
   }
 
   // ---- driving the quiz via slide navigation (only if ?key= is present) ----

@@ -208,7 +208,7 @@ This asymmetry is the whole point: the room can't vote with the majority, and yo
 University Wi-Fi often isolates clients, so phones can't reach your laptop. Options:
 
 - **Share a hotspot from your phone** and connect your laptop to it. Simplest, always works.
-- **`presik s01 --tunnel`** — brings up a public `https://…trycloudflare.com` URL via [cloudflared](https://developers.cloudflare.com/cloudflare-tunnel/) and points the QR at it. Needs `cloudflared` installed; if it's missing, presik just stays on the local network.
+- **`presik s01 --tunnel`** — brings up a public `https://…trycloudflare.com` URL via [cloudflared](https://developers.cloudflare.com/cloudflare-tunnel/) and points the QR at it. Needs `cloudflared` installed; if it's missing, presik just stays on the local network. The link appears once the tunnel is actually reachable (usually 10–30 s) — handing it out earlier lets phones cache the not-yet-existing hostname as dead for up to 30 minutes.
 
 ---
 

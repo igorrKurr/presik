@@ -37,6 +37,7 @@ const { groupSlug, sessionSlug, toSessionName, parseArgs, bestHostIp, rankHostIp
 const { resolvePackage } = require('./widgets');
 const { readAssetText } = require('./assets');
 const { ensureDeckPdf } = require('./convert');
+const { startTunnel } = require('./tunnel');
 const { buildReport } = require('./report-data');
 const { loadConfig } = require('./config');
 const { MARP_JS, MARP_AVAILABLE } = require('./marp');
@@ -418,6 +419,16 @@ const state = { index: -1, revealed: false, autoReveal: false };
 const answers = new Map(); // qid -> Map(clientId -> value)
 const students = new Set();
 const streams = new Set();
+// Students on the /api/poll fallback (clientId -> last poll time). Used when a
+// proxy buffers the event stream — Cloudflare's quick tunnels do — so nothing
+// ever arrives over SSE. A poller counts as connected until it goes quiet.
+const pollers = new Map();
+const POLL_STALE_MS = 10000;
+function connectedCount() {
+  const now = Date.now();
+  for (const [cid, t] of pollers) if (now - t > POLL_STALE_MS) pollers.delete(cid);
+  return students.size + pollers.size;
+}
 let joinUrl = '';
 let qrSvg = '';
 
@@ -540,7 +551,8 @@ function maybeAutoReveal() {
   const q = cur();
   if (!q) return;
   const answered = (answers.get(q.id) || new Map()).size;
-  if (students.size > 0 && answered >= students.size) {
+  const connected = connectedCount();
+  if (connected > 0 && answered >= connected) {
     state.revealed = true;
     persistLiveState();
   }
@@ -606,7 +618,7 @@ function stats(isHost) {
   if (!q) return null;
   const kind = effectiveKind(q); // a widget aggregates as the primitive kind it declares
   const given = answers.get(q.id) || new Map();
-  const base = { answered: given.size, connected: students.size };
+  const base = { answered: given.size, connected: connectedCount() };
   if (!isHost && !state.revealed) return base; // students don't see the distribution before reveal
   if (kind === 'text') return { ...base, texts: [...given.values()].slice(0, 80) };
   if (kind === 'scale') {
@@ -863,6 +875,18 @@ const server = http.createServer(async (req, res) => {
     req.on('close', cleanup);
     broadcast();
     return;
+  }
+
+  // Same snapshot as /api/stream, one shot — the pages fall back to this when
+  // the stream stays silent (see `pollers`).
+  if (p === '/api/poll') {
+    const cid = (url.searchParams.get('cid') || '').slice(0, 64);
+    if (cid && !isHost && url.searchParams.get('embed') !== '1') {
+      const isNew = !pollers.has(cid);
+      pollers.set(cid, Date.now());
+      if (isNew) broadcast();
+    }
+    return send(res, 200, 'application/json; charset=utf-8', snapshot(isHost));
   }
 
   if (p === '/api/answer' && req.method === 'POST') {
@@ -1162,30 +1186,18 @@ server.on('error', (e) => {
       return;
     }
 
-    console.log('\n  Bringing up a tunnel via cloudflared…');
-    const cf = spawn('cloudflared', ['tunnel', '--url', 'http://localhost:' + PORT], { stdio: ['ignore', 'pipe', 'pipe'] });
-    let done = false;
-    const scan = async (buf) => {
-      const m = String(buf).match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/i);
-      if (m && !done) {
-        done = true;
-        await setJoinUrl(m[0] + '/');
-        banner();
-      }
-    };
-    cf.stdout.on('data', scan);
-    cf.stderr.on('data', scan);
-    cf.on('error', () => {
-      done = true; // failed for good — don't also let the 15s "timed out" fallback fire a second banner
-      console.log('  cloudflared not found — staying on the local network.');
-      banner();
-    });
-    process.on('exit', () => cf.kill());
-    setTimeout(() => {
-      if (!done) {
-        console.log('  Tunnel did not come up within 15s — staying on the local network.');
-        banner();
-      }
-    }, 15000);
+    console.log('\n  Bringing up a tunnel via cloudflared — waiting until it is reachable before showing the link…');
+    const t = await startTunnel(PORT);
+    if (t.proc) process.on('exit', () => t.proc.kill());
+    if (t.url) {
+      await setJoinUrl(t.url);
+      if (!t.verified)
+        console.log('  Could not confirm the tunnel is reachable yet — if students can\'t connect, wait a minute and retry.');
+    } else {
+      t.proc.kill();
+      console.log('  ' + t.reason + ' — staying on the local network.');
+      if (t.log.length) console.log('  cloudflared said:\n    ' + t.log.join('\n    '));
+    }
+    banner();
   });
 })();

@@ -39,6 +39,7 @@ const { readAssetText } = require('./assets');
 const { ensureDeckPdf } = require('./convert');
 const { buildReport } = require('./report-data');
 const { loadConfig } = require('./config');
+const { MARP_JS, MARP_AVAILABLE } = require('./marp');
 const { readQuestions, saveQuestions, restoreQuestions, listHistory, readHistory } = require('./editor');
 
 const VERSION = require('../package.json').version;
@@ -258,26 +259,10 @@ const COOP_COEP = { 'Cross-Origin-Opener-Policy': 'same-origin', 'Cross-Origin-E
 // Slides are the source of truth in deck.marp.md; deck.marp.html is a build
 // artifact the server rebuilds itself whenever the .md is newer than the
 // .html (or the .html doesn't exist yet).
-// Run marp-cli's JS entry through the current node binary rather than the
-// node_modules/.bin/marp shim: the shim is a shell script on macOS/Linux and
-// a .cmd on Windows, and execFileSync on the extensionless name can't launch
-// the .cmd — so the old approach silently broke slide builds on Windows.
-// Resolve it rather than joining a path under the engine root: when presik is
-// installed as a dependency, npm HOISTS marp-cli to the consumer's top-level
-// node_modules, so <engine>/node_modules/@marp-team/… doesn't exist and the old
-// existsSync check reported "no Marp" on a perfectly good install.
-// require.resolve walks the whole node_modules chain, so it finds Marp whether
-// it's hoisted, nested, or installed globally alongside presik.
-let MARP_JS = null;
-try {
-  MARP_JS = require.resolve('@marp-team/marp-cli/marp-cli.js');
-} catch (_) {}
-// Marp is an optionalDependency: a normal install gets it and /slides works,
-// but it's absent from the packaged single-file binary and from an install run
-// with --omit=optional. Slide-building degrades gracefully in that case:
-// everything else — phones, /host, /present, PDF decks — works, and /slides
-// explains how to get Marp support.
-const MARP_AVAILABLE = MARP_JS !== null;
+// marp-cli is resolved in marp.js (shared with `presik export`). It's optional:
+// absent from the packaged binary and from --omit=optional installs.
+// Slide-building degrades gracefully in that case: everything else — phones,
+// /host, /present, PDF decks — works, and /slides explains how to get Marp support.
 // A session's deck is Marp markdown or a PDF (later: pptx/key converted to a
 // PDF under the hood). Marp wins if both are present. Either way presik owns
 // navigation on /slides, so slides and quiz stay in lockstep.

@@ -25,6 +25,7 @@ test('cli: --help, help <topic>, <sub> --help, and --version exit 0 without star
   assert.match(overview.stdout, /presik help run/);
   assert.match(run('help', 'report').stdout, /--csv/);
   assert.match(run('new', '--help').stdout, /--questions-only/);
+  assert.match(run('export', '--help').stdout, /--with-quiz/);
   assert.match(run('s01', '-h').stdout, /--tunnel/);
   assert.match(run('--version').stdout, /^\d+\.\d+\.\d+/);
 });

@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const { parsePackageRef, versionSatisfies, pickPackageDir } = require('../src/widgets');
-const { validateAnswer, effectiveKind, isSafeWidgetSrc, isRemoteWidgetUrl, isPackageRef, groupSlug, sessionSlug, parseArgs, rankHostIps, bestHostIp, toSessionName, buildDeckSteps, splitMarpSlides, deriveMarpMarkdown, pickConverters, normalizeQuiz, validateConfigObject, mergeConfig, historyToPrune } = require('../src/lib');
+const { validateAnswer, effectiveKind, isSafeWidgetSrc, isRemoteWidgetUrl, isPackageRef, groupSlug, sessionSlug, parseArgs, rankHostIps, bestHostIp, toSessionName, buildDeckSteps, splitMarpSlides, deriveMarpMarkdown, staticQuizSlides, exportMarpMarkdown, mdEscape, pickConverters, normalizeQuiz, validateConfigObject, mergeConfig, historyToPrune } = require('../src/lib');
 
 test('validateAnswer: choice accepts only real option ids', () => {
   const q = { type: 'choice', options: [{ id: 'a' }, { id: 'b' }] };
@@ -321,4 +321,52 @@ test('parseArgs: a flag with no value reads as absent, not as the next flag', ()
   assert.strictEqual(a.opt('key', null), null); // --tunnel isn't --key's value
   assert.strictEqual(a.has('tunnel'), true);
   assert.deepStrictEqual(a.positional, []);
+});
+
+test('mdEscape: author text reads literally in generated Markdown', () => {
+  assert.strictEqual(mdEscape('2*3 <b> $x$ :smile:'), '2\\*3 \\<b\\> \\$x\\$ \\:smile\\:');
+  assert.strictEqual(mdEscape('one\n  two'), 'one two');
+  assert.strictEqual(mdEscape(null), '');
+});
+
+test('staticQuizSlides: question + answer, never the hint; no answer slide when nothing to reveal', () => {
+  const choice = { id: 'q', type: 'choice', text: 'Pick', note: 'n', hint: 'SECRET', explain: 'because',
+    options: [{ id: 'a', text: 'A' }, { id: 'b', text: 'B', correct: true }] };
+  const [q, a] = staticQuizSlides(choice);
+  assert.match(q, /## Pick/);
+  assert.match(q, /- A\n- B/);
+  assert.match(a, /\*\*B\*\* ✓/);
+  assert.doesNotMatch(a, /\*\*A\*\*/);
+  assert.match(a, /because/);
+  assert.ok(!(q + a).includes('SECRET'));
+  assert.strictEqual(staticQuizSlides({ id: 't', type: 'text', text: 'Why?' }).length, 1);
+  assert.match(staticQuizSlides({ id: 's', type: 'scale', text: 'Sure?', min: 1, max: 5 })[0], /Scale: 1 – 5/);
+});
+
+test('exportMarpMarkdown: placed questions — dropped by default, static with the quiz', () => {
+  const md = '---\nmarp: true\n---\n\n# One\n\n---\n\n# Two\n';
+  const qs = [{ id: 'q1', type: 'choice', text: 'Q?', slide: 1, options: [{ id: 'a', text: 'A', correct: true }] }];
+  const plain = exportMarpMarkdown(md, qs, false);
+  assert.strictEqual(splitMarpSlides(plain).slides.length, 2);
+  assert.ok(!plain.includes('data-quiz'));
+  const withQuiz = splitMarpSlides(exportMarpMarkdown(md, qs, true));
+  assert.match(withQuiz.front, /marp: true/);
+  assert.strictEqual(withQuiz.slides.length, 4); // One, question, answer, Two
+  assert.match(withQuiz.slides[1], /###### Question/);
+});
+
+test('exportMarpMarkdown: hand-placed markers — replaced or removed, emptied slides dropped, join always goes', () => {
+  const md = [
+    '# One', '---', '<!-- _class: lead -->\n\n<div data-quiz-join></div>\n\n<!-- notes -->',
+    '---', '<div data-quiz-question="q1"></div>', '---', '<div data-quiz-reveal="q1"></div>',
+    '---', '# Two\n\n<div data-quiz-question="gone"></div>',
+  ].join('\n\n');
+  const qs = [{ id: 'q1', type: 'text', text: 'Why?', explain: 'Because.' }];
+  const plain = splitMarpSlides(exportMarpMarkdown(md, qs, false)).slides;
+  assert.strictEqual(plain.length, 2); // One, Two — join/question/reveal slides were only markers
+  assert.ok(!plain.join('').includes('data-quiz'));
+  const withQuiz = splitMarpSlides(exportMarpMarkdown(md, qs, true)).slides;
+  assert.strictEqual(withQuiz.length, 4); // One, question, answer, Two
+  assert.match(withQuiz[1], /## Why\\\?/);
+  assert.match(withQuiz[2], /Because\\\./);
 });

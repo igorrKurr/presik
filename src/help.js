@@ -2,14 +2,14 @@
 //  presik help — every command, flag, and setting, in one place.
 //
 //    presik help                 → overview: commands + where to look next
-//    presik help <command>       → details for one command (run, new, edit, widget, report, config)
+//    presik help <command>       → details for one command (run, new, edit, export, widget, report, config)
 //    presik --help / -h          → same as `presik help`
 //    presik <command> --help     → same as `presik help <command>`
 //    presik --version / -v       → the version
 //
 // The long-form version of this lives in docs/CLI.md — keep the two in step
 // when a flag is added (the flags themselves are parsed in server.js,
-// scaffold.js, widget-cli.js and report.js).
+// scaffold.js, export.js, widget-cli.js and report.js).
 // =====================================================================
 const VERSION = require('../package.json').version;
 
@@ -35,6 +35,7 @@ const TOPICS = {
       ['presik [<session>] [options]', 'run a session (no session: run the only one, or list them)'],
       ['presik new <session> [options]', 'scaffold a new session from the templates'],
       ['presik edit <session> [options]', 'run the session with the browser question editor open'],
+      ['presik export <session> [options]', 'export the Marp deck to PDF (quiz slides left out by default)'],
       ['presik widget <add|ls> [options]', 'vendor / list interactive widget packages'],
       ['presik report [options]', 'analyse saved answers (same as presik-report)'],
       ['presik help [<topic>]', 'this help, or details for one topic'],
@@ -44,6 +45,7 @@ const TOPICS = {
       ['presik help run', 'every flag for running a class (--port, --key, --tunnel, …)'],
       ['presik help new', 'scaffolding a session'],
       ['presik help edit', 'the browser question editor'],
+      ['presik help export', 'Marp deck → PDF, with or without quiz slides'],
       ['presik help widget', 'widget packages'],
       ['presik help report', 'analytics: text, CSV, HTML, PDF'],
       ['presik help config', 'presik.config.json — saving flags per project/session'],
@@ -117,6 +119,29 @@ const TOPICS = {
     section('Examples', table([
       ['presik edit s01', 'edit ./s01/questions.json'],
       ['presik edit s09', 'no questions.json yet — opens blank'],
+    ])) +
+    COMMON_FOOTER,
+
+  export: () =>
+    '\n  ' + bold('presik export <session> [options]') + '  — Marp deck → PDF\n' +
+    '\n  Renders <session>/deck.marp.md to PDF with Marp — for handouts, an LMS, or\n' +
+    '  presenting without presik. Quiz slides are left out by default: both questions\n' +
+    '  placed with "slide": N and markers written into the deck by hand, plus the\n' +
+    '  join-QR slide. Needs Chrome, Edge or Firefox, and the npm install (the\n' +
+    '  single-file binary has no Marp).\n' +
+    section('Options', table([
+      ['--with-quiz', 'include a static question slide and answer slide per question (never the hint)'],
+      ['--out <file.pdf>', 'output file (default: <session>/deck.marp.pdf, or deck.marp.quiz.pdf with --with-quiz)'],
+      ['--open', 'open the PDF when it\'s written'],
+      ['--dir <path>', 'content root (default: current directory)'],
+    ])) +
+    section('Environment', table([
+      ['CHROME_PATH', 'browser binary Marp renders with, if it isn\'t found automatically'],
+    ])) +
+    section('Examples', table([
+      ['presik export s01', 'slides only → s01/deck.marp.pdf'],
+      ['presik export s01 --with-quiz', 'slides + questions + answers → s01/deck.marp.quiz.pdf'],
+      ['presik export web-dev/s01 --out handout.pdf --open', 'pick the file, then open it'],
     ])) +
     COMMON_FOOTER,
 
@@ -195,7 +220,7 @@ const TOPICS = {
 };
 
 // Words people reach for that mean an existing topic.
-const ALIASES = { start: 'run', server: 'run', serve: 'run', widgets: 'widget', settings: 'config', 'presik.config.json': 'config' };
+const ALIASES = { pdf: 'export', start: 'run', server: 'run', serve: 'run', widgets: 'widget', settings: 'config', 'presik.config.json': 'config' };
 
 function helpText(topic) {
   if (!topic) return TOPICS.overview();

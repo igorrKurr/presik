@@ -59,6 +59,7 @@ With no argument, `presik`:
 | `deck.pptx` / `deck.key` | no | you | a PowerPoint / Keynote deck — presik converts it to PDF under the hood (cached), then treats it like `deck.pdf` |
 | `deck.marp.html` | — | engine (automatic) | build artifact from `deck.marp.md`; don't edit, don't commit |
 | `join-qr.svg` | — | engine (automatic) | QR with the current join link; rewritten every run |
+| `deck.marp.pdf` / `deck.marp.quiz.pdf` | — | `presik export` (on request) | the Marp deck as a PDF, without / with static quiz slides |
 
 A session's deck is `deck.marp.md`, `deck.pdf`, `deck.pptx`, or `deck.key` (precedence in that order: Marp wins, then a direct PDF, then a converted one). A deck without `questions.json` doesn't make sense (nothing to control). `questions.json` **without** a deck is a fully working mode — students and `/host` work fine, and the projector uses `/present` — there's just no `/slides`.
 

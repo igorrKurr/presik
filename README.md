@@ -245,6 +245,8 @@ presik new web-dev/s02 --title "S02 — Status codes"
 presik new s02 --questions-only                # just the quiz, no Marp deck (for PowerPoint/Keynote)
 ```
 
+Need the slides as a PDF — a handout, an LMS upload? `presik export s01` renders the Marp deck without the quiz slides; add `--with-quiz` to include a static question and answer slide for each question (never your `hint`). Details — [`docs/CLI.md`](docs/CLI.md#presik-export--marp-deck-to-pdf).
+
 It generates both files from templates — the example questions already carry `slide` numbers that match the template deck, ready to run as-is or edit. It won't overwrite an existing `questions.json`/`deck.marp.md`, so it's always safe to run.
 
 The full `questions.json` schema (question types `choice` / `text` / `scale`), naming rules, and every flag — [`CONVENTIONS.md`](CONVENTIONS.md).

@@ -5,7 +5,7 @@
 // npm, or the packaged binary; no argv fix-up is needed.
 const args = process.argv.slice(2);
 const cmd = args[0];
-const SUBCOMMANDS = new Set(['new', 'edit', 'widget', 'report']);
+const SUBCOMMANDS = new Set(['new', 'edit', 'widget', 'report', 'export']);
 
 // Help and version are answered before the SQLite check, so they work even on
 // a Node too old to run a class. `presik help <topic>`, `presik --help`, and
@@ -23,6 +23,7 @@ if (args.includes('--help') || args.includes('-h')) {
 require('../src/sqlite-guard').ensureSqlite();
 
 if (cmd === 'new') require('../src/scaffold.js');
+else if (cmd === 'export') require('../src/export.js'); // Marp deck → PDF — export.js parses the rest
 else if (cmd === 'widget') require('../src/widget-cli.js'); // presik widget add/ls — widget-cli.js parses the rest
 else if (cmd === 'report') { process.argv.splice(2, 1); require('../src/report.js'); } // drop "report", report.js parses the rest
 // `presik edit <session>` is the ordinary server with the editor opened for you

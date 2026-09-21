@@ -6,7 +6,7 @@ The same information is available in the terminal:
 
 ```bash
 presik help                # overview
-presik help <topic>        # run · new · edit · widget · report · config
+presik help <topic>        # run · new · edit · export · widget · report · config
 presik --help              # same as `presik help`
 presik <command> --help    # same as `presik help <command>`
 presik --version           # print the version (also -v)
@@ -18,6 +18,7 @@ presik --version           # print the version (also -v)
 - [`presik [<session>]` — run a class](#presik-session--run-a-class)
 - [`presik new` — scaffold a session](#presik-new--scaffold-a-session)
 - [`presik edit` — edit questions in the browser](#presik-edit--edit-questions-in-the-browser)
+- [`presik export` — Marp deck to PDF](#presik-export--marp-deck-to-pdf)
 - [`presik widget` — widget packages](#presik-widget--widget-packages)
 - [`presik report` / `presik-report` — analytics](#presik-report--presik-report--analytics)
 - [`presik.config.json` — saved settings](#presikconfigjson--saved-settings)
@@ -33,6 +34,7 @@ presik --version           # print the version (also -v)
 | `presik [<session>] [options]` | Run a session. With no session: run the content root if it's the only one, otherwise list every session found. |
 | `presik new <session> [options]` | Scaffold `questions.json` (+ `deck.marp.md`) from the templates. |
 | `presik edit <session> [options]` | Run the session with the browser question editor opened. |
+| `presik export <session> [options]` | Export the Marp deck to PDF — quiz slides left out unless `--with-quiz`. |
 | `presik widget add <dist> [options]` | Vendor a built widget bundle into `widgets/`. |
 | `presik widget ls [options]` | List vendored widget packages. |
 | `presik report [options]` | Analyse saved answers. Identical to `presik-report`. |
@@ -135,6 +137,35 @@ presik edit s09 --port 3001      # new session, alongside a running class on 300
 ```
 
 Details: [`CONVENTIONS.md` → The question editor](../CONVENTIONS.md#the-question-editor--edit).
+
+---
+
+## `presik export` — Marp deck to PDF
+
+```bash
+presik export <session> [options]
+```
+
+Renders `<session>/deck.marp.md` to a PDF with Marp — for handouts, uploading to an LMS, or presenting without presik. It uses the same Marp that builds `/slides`, so the PDF looks the same.
+
+**Quiz slides are left out by default.** That covers questions placed with `"slide": N`, quiz markers written into the deck by hand (`<div data-quiz-question="…">` / `data-quiz-reveal`), and the join-QR slide — a QR pointing at a server that isn't running is useless on paper. A slide that contained nothing but a marker is dropped rather than exported blank.
+
+**`--with-quiz`** swaps each quiz slide for a static version instead: a *Question* slide (text, note, and the options / scale range / "Open answer") and an *Answer* slide (the correct options and `explain`). The answer slide is skipped when there's nothing to show; the teacher-only `hint` is never included. Generated slides carry the Marp class `presik-quiz`, so a custom theme can style them.
+
+| Flag | Value | Default | Description |
+|---|---|---|---|
+| `--with-quiz` | — | off | Include static question/answer slides. |
+| `--out` | file path | `<session>/deck.marp.pdf` (`deck.marp.quiz.pdf` with `--with-quiz`) | Where to write the PDF. |
+| `--open` | — | off | Open the PDF once written. |
+| `--dir` | path | current directory | Content root. |
+
+```bash
+presik export s01                                  # slides only → s01/deck.marp.pdf
+presik export s01 --with-quiz                      # + questions and answers → s01/deck.marp.quiz.pdf
+presik export web-dev/s01 --out handout.pdf --open
+```
+
+Needs Chrome, Edge or Firefox (set `CHROME_PATH` if Marp can't find it) and the npm install — the single-file binary ships without Marp. For a PowerPoint/Keynote deck, the PDF presik converts on every run is in `.presik/cache/`; a `deck.pdf` is already a PDF.
 
 ---
 
@@ -249,7 +280,7 @@ CLI flag  >  <session>/presik.config.json  >  <root>/presik.config.json  >  buil
 
 | Variable | Used by | Effect |
 |---|---|---|
-| `CHROME_PATH` | `report --pdf` | Chrome/Chromium/Edge binary to render the PDF with. |
+| `CHROME_PATH` | `report --pdf`, `export` | Chrome/Chromium/Edge binary to render the PDF with. |
 | `PUPPETEER_EXECUTABLE_PATH` | `report --pdf` | Same as `CHROME_PATH`; checked first. |
 | `NO_COLOR` | `help` | Disable bold/dim styling in help output. |
 | `PRESIK_NODE_VERSION` | `npm run build` | Node version to download for the single-file binary when the local Node can't be used. |
@@ -261,4 +292,4 @@ CLI flag  >  <session>/presik.config.json  >  <root>/presik.config.json  >  buil
 | Code | Meaning |
 |---|---|
 | `0` | Success (including `help`, `--version`, and listing sessions). |
-| `1` | Bad input or environment: unknown help topic, missing/invalid `questions.json`, invalid `presik.config.json`, session outside the content root, port in use, missing database for `report`, Node older than 22.5. |
+| `1` | Bad input or environment: unknown help topic, missing/invalid `questions.json`, no `deck.marp.md` or no Marp for `export`, invalid `presik.config.json`, session outside the content root, port in use, missing database for `report`, Node older than 22.5. |

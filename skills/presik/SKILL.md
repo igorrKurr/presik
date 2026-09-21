@@ -1,13 +1,13 @@
 ---
 name: presik
-description: Create, run and analyse live in-class quizzes with presik — students answer on their phones while the projector shows slides (Marp, PDF, PowerPoint or Keynote) with the quiz interleaved. Use when the user wants to write or edit a presik questions.json, turn lecture material or a slide deck into quiz questions, scaffold a session or course, place questions after specific slides, run a class (ports, teacher key, groups, tunnel), set up presik.config.json, vendor a widget, or read results with presik report / presik-report. Triggers on "presik", "questions.json", "in-class quiz", "live quiz for my lecture", "clicker questions", "exit ticket", "quiz in my slides".
+description: Create, run and analyse live in-class quizzes with presik — students answer on their phones while the projector shows slides (Marp, PDF, PowerPoint or Keynote) with the quiz interleaved. Use when the user wants to write or edit a presik questions.json, turn lecture material or a slide deck into quiz questions, scaffold a session or course, place questions after specific slides, run a class (ports, teacher key, groups, tunnel), set up presik.config.json, vendor a widget, export a Marp deck to PDF with or without quiz slides, or read results with presik report / presik-report. Triggers on "presik", "questions.json", "in-class quiz", "live quiz for my lecture", "clicker questions", "exit ticket", "quiz in my slides", "export my slides to PDF".
 ---
 
 # presik
 
 presik is a local CLI (`npm i -g presik`, `npx presik`, or a single-file binary) that runs a live quiz server on the teacher's machine. The **engine** is the CLI; the **content** is plain files in a folder the user owns. Your job is almost always to write or fix content files and tell the user which command to run.
 
-Always confirm the facts with the installed CLI instead of memory when in doubt: `presik help`, `presik help <run|new|edit|widget|report|config>`. The full reference is `docs/CLI.md` in the presik repo.
+Always confirm the facts with the installed CLI instead of memory when in doubt: `presik help`, `presik help <run|new|edit|export|widget|report|config>`. The full reference is `docs/CLI.md` in the presik repo.
 
 ## Core model
 
@@ -49,6 +49,8 @@ presik <session> --key web-dev-2026       # stable teacher key instead of a rand
 presik <session> --port 8080 --host 192.168.1.42
 presik <session> --tunnel                 # public URL via cloudflared (remote/Zoom students)
 presik edit <session>                     # browser editor for questions.json
+presik export <session>                   # Marp deck → PDF, quiz slides left out
+presik export <session> --with-quiz       # … with static question + answer slides (no hints)
 ```
 
 - Projector: open the `Slides:` link **with** `?key=`, press `f` for fullscreen. Teacher's phone: the `Teacher:` link. Never put `/host` on the projector.
@@ -74,4 +76,5 @@ presik report --session s01 --pdf report.pdf      # needs Chrome (CHROME_PATH); 
 - Don't edit `deck.marp.html`, `.deck.build.md`, `join-qr.svg` or anything in `.presik/` — they're generated.
 - Don't put settings in `questions.json` or questions in `presik.config.json`.
 - Don't use `srcdoc` widgets with `"isolate": true` — isolation is only for `src`/`package`/`url` widgets.
+- Don't hand-write the Marp CLI to make a PDF of a presik deck — `presik export` also strips (or renders) the quiz slides, which raw Marp would leave as empty placeholders.
 - Don't invent flags. If unsure, run `presik help <topic>`.

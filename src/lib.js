@@ -176,13 +176,17 @@ function splitMarpSlides(md) {
 // question + reveal marker slide inserted right after that 1-based slide. The
 // author writes no markers — placement lives in questions.json, unified with
 // PDF decks. Questions without `slide` are left out (controlled from /host).
-function deriveMarpMarkdown(md, questions) {
+// `slidesFor(q)` returns the slides to insert for one question: by default the
+// live markers embed.js fills in; `presik export --with-quiz` passes
+// staticQuizSlides instead, since a PDF has no server to fill them.
+const liveQuizMarkers = (q) => ['<div data-quiz-question="' + q.id + '"></div>', '<div data-quiz-reveal="' + q.id + '"></div>'];
+function deriveMarpMarkdown(md, questions, slidesFor = liveQuizMarkers) {
   const placed = (questions || []).filter((q) => q && q.slide);
   if (!placed.length) return String(md); // nothing to inject → build as-is
   const { front, slides } = splitMarpSlides(md);
   const bySlide = {};
   placed.forEach((q) => { (bySlide[q.slide] = bySlide[q.slide] || []).push(q); });
-  const marker = (q) => ['<div data-quiz-question="' + q.id + '"></div>', '<div data-quiz-reveal="' + q.id + '"></div>'];
+  const marker = slidesFor;
   const chunks = [];
   for (let n = 1; n <= slides.length; n++) {
     chunks.push(slides[n - 1]);
@@ -192,6 +196,64 @@ function deriveMarpMarkdown(md, questions) {
   Object.keys(bySlide).map(Number).filter((n) => n > slides.length).sort((a, b) => a - b)
     .forEach((n) => bySlide[n].forEach((q) => chunks.push(...marker(q))));
   return (front ? front + '\n\n' : '') + chunks.join('\n\n---\n\n') + '\n';
+}
+
+// Author text dropped into generated Markdown must read literally — a `*`, `<`,
+// `$` (Marp math) or `:smile:` (emoji) in a question would otherwise turn into
+// formatting. CommonMark lets any ASCII punctuation be backslash-escaped.
+function mdEscape(s) {
+  return String(s == null ? '' : s).replace(/\s*\n\s*/g, ' ').replace(/[!-/:-@[-`{-~]/g, '\\$&');
+}
+
+// The static stand-in for one question's live slides, for a PDF export: a
+// question slide (text, note, options / scale / open answer) and an answer
+// slide (correct options, explain). The answer slide is skipped when there's
+// nothing to reveal. `hint` is teacher-only and never appears.
+function staticQuizSlides(q) {
+  const kind = effectiveKind(q);
+  const opts = q.options || [];
+  const head = (label) => '<!-- _class: presik-quiz -->\n\n###### ' + label + '\n\n## ' + mdEscape(q.text);
+  const body = [head('Question')];
+  if (q.note) body.push('*' + mdEscape(q.note) + '*');
+  if (kind === 'choice') body.push(opts.map((o) => '- ' + mdEscape(o.text || o.id)).join('\n'));
+  else if (kind === 'scale') body.push('Scale: ' + q.min + ' – ' + q.max);
+  else if (kind === 'text') body.push('*Open answer*');
+  const slides = [body.join('\n\n')];
+
+  const correct = kind === 'choice' ? opts.filter((o) => o.correct) : [];
+  if (correct.length || q.explain) {
+    const ans = [head('Answer')];
+    if (correct.length) ans.push(correct.map((o) => '- **' + mdEscape(o.text || o.id) + '** ✓').join('\n'));
+    if (q.explain) ans.push(mdEscape(q.explain));
+    slides.push(ans.join('\n\n'));
+  }
+  return slides;
+}
+
+// The Markdown `presik export` hands to Marp. Quiz slides come from two places
+// and both are handled: questions placed with "slide": N (deriveMarpMarkdown),
+// and markers hand-written into older decks (<div data-quiz-question="id">…).
+// withQuiz=false drops every quiz slide; withQuiz=true renders each one
+// statically. The join-QR slide always goes — a QR to a server that isn't
+// running is noise on paper. A slide left with nothing but comments/directives
+// once its markers are gone is dropped rather than exported blank.
+const QUIZ_MARKER = /<div\s+data-quiz-(join|question|reveal)(?:="([^"]*)")?\s*><\/div>/g;
+function exportMarpMarkdown(md, questions, withQuiz) {
+  const qs = questions || [];
+  const byId = new Map(qs.map((q) => [q.id, q]));
+  const derived = deriveMarpMarkdown(md, qs, withQuiz ? staticQuizSlides : () => []);
+  const { front, slides } = splitMarpSlides(derived);
+  const out = [];
+  for (const slide of slides) {
+    const body = slide.replace(QUIZ_MARKER, (m, kind, id) => {
+      const q = withQuiz && kind !== 'join' ? byId.get(id) : null;
+      if (!q) return '';
+      const [question, answer] = staticQuizSlides(q);
+      return '\n\n' + ((kind === 'question' ? question : answer) || '') + '\n\n';
+    });
+    if (body === slide || body.replace(/<!--[\s\S]*?-->/g, '').trim()) out.push(body);
+  }
+  return (front ? front + '\n\n' : '') + out.join('\n\n---\n\n') + '\n';
 }
 
 // Build the combined navigation sequence for a PDF deck: each page, followed by
@@ -452,4 +514,4 @@ function historyToPrune(names, max) {
   return sorted.slice(0, Math.max(0, sorted.length - max));
 }
 
-module.exports = { toSessionName, sessionSlug, parseArgs, groupSlug, rankHostIps, bestHostIp, isPrivateV4, effectiveKind, validateAnswer, buildDeckSteps, splitMarpSlides, deriveMarpMarkdown, pickConverters, normalizeQuiz, validateConfigObject, mergeConfig, historyToPrune, isSafeWidgetSrc, isRemoteWidgetUrl, isPackageRef, CONFIG_FILE, CONFIG_SPEC, QUESTION_TYPES, ANSWER_KINDS, WIDGET_SOURCES, SCALE_MAX_STEPS, WIDGET_MAX_HEIGHT, VIRTUAL_IFACE };
+module.exports = { toSessionName, sessionSlug, parseArgs, groupSlug, rankHostIps, bestHostIp, isPrivateV4, effectiveKind, validateAnswer, buildDeckSteps, splitMarpSlides, deriveMarpMarkdown, staticQuizSlides, exportMarpMarkdown, mdEscape, pickConverters, normalizeQuiz, validateConfigObject, mergeConfig, historyToPrune, isSafeWidgetSrc, isRemoteWidgetUrl, isPackageRef, CONFIG_FILE, CONFIG_SPEC, QUESTION_TYPES, ANSWER_KINDS, WIDGET_SOURCES, SCALE_MAX_STEPS, WIDGET_MAX_HEIGHT, VIRTUAL_IFACE };

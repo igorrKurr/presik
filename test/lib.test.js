@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const { parsePackageRef, versionSatisfies, pickPackageDir } = require('../src/widgets');
-const { validateAnswer, effectiveKind, isSafeWidgetSrc, isRemoteWidgetUrl, isPackageRef, groupSlug, sessionSlug, parseArgs, rankHostIps, bestHostIp, toSessionName, buildDeckSteps, splitMarpSlides, deriveMarpMarkdown, staticQuizSlides, exportMarpMarkdown, mdEscape, pickConverters, normalizeQuiz, validateConfigObject, mergeConfig, historyToPrune } = require('../src/lib');
+const { validateAnswer, effectiveKind, isSafeWidgetSrc, isRemoteWidgetUrl, isPackageRef, groupSlug, sessionSlug, parseArgs, rankHostIps, bestHostIp, toSessionName, buildDeckSteps, splitMarpSlides, deriveMarpMarkdown, staticQuizSlides, exportMarpMarkdown, localizeSlideUrls, mdEscape, pickConverters, normalizeQuiz, validateConfigObject, mergeConfig, historyToPrune } = require('../src/lib');
 
 test('validateAnswer: choice accepts only real option ids', () => {
   const q = { type: 'choice', options: [{ id: 'a' }, { id: 'b' }] };
@@ -369,4 +369,17 @@ test('exportMarpMarkdown: hand-placed markers — replaced or removed, emptied s
   assert.strictEqual(withQuiz.length, 4); // One, question, answer, Two
   assert.match(withQuiz[1], /## Why\\\?/);
   assert.match(withQuiz[2], /Because\\\./);
+});
+
+test('localizeSlideUrls: server /slides/ asset links become session-relative, prose untouched', () => {
+  assert.strictEqual(localizeSlideUrls('![w:1080](/slides/assets/a.svg)'), '![w:1080](./assets/a.svg)');
+  assert.strictEqual(localizeSlideUrls('![bg right](</slides/my fig.png>)'), '![bg right](<./my fig.png>)');
+  assert.strictEqual(localizeSlideUrls('<img src="/slides/x.png"> <a href=\'/slides/y\'>'), '<img src="./x.png"> <a href=\'./y\'>');
+  assert.strictEqual(localizeSlideUrls('background: url("/slides/bg.jpg")'), 'background: url("./bg.jpg")');
+  assert.strictEqual(localizeSlideUrls('open /slides/ on the projector'), 'open /slides/ on the projector');
+  assert.strictEqual(localizeSlideUrls('![](https://x.org/slides/a.png)'), '![](https://x.org/slides/a.png)');
+});
+
+test('exportMarpMarkdown: rewrites /slides/ image links for a server-less PDF', () => {
+  assert.match(exportMarpMarkdown('# A\n\n![w:900](/slides/assets/f.svg)\n', [], false), /!\[w:900\]\(\.\/assets\/f\.svg\)/);
 });

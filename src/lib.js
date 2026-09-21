@@ -236,7 +236,20 @@ function staticQuizSlides(q) {
 // withQuiz=false drops every quiz slide; withQuiz=true renders each one
 // statically. The join-QR slide always goes — a QR to a server that isn't
 // running is noise on paper. A slide left with nothing but comments/directives
-// once its markers are gone is dropped rather than exported blank.
+// once its markers are gone is dropped rather than exported blank. Server-only
+// /slides/… asset links become file paths (localizeSlideUrls).
+// While presik runs, /slides/<path> serves <session>/<path> — so decks written
+// for presik can reference assets as "/slides/assets/fig.svg". A PDF export has
+// no server: rewrite those links to session-relative paths, which Marp resolves
+// against the build file sitting in the session folder. Only link positions are
+// touched (Markdown ](…), src=/href=, CSS url(…)) — never prose.
+function localizeSlideUrls(md) {
+  return String(md)
+    .replace(/(\]\(\s*<?)\/slides\//g, '$1./')
+    .replace(/(\b(?:src|href|poster|data)\s*=\s*["']?)\/slides\//gi, '$1./')
+    .replace(/(url\(\s*["']?)\/slides\//gi, '$1./');
+}
+
 const QUIZ_MARKER = /<div\s+data-quiz-(join|question|reveal)(?:="([^"]*)")?\s*><\/div>/g;
 function exportMarpMarkdown(md, questions, withQuiz) {
   const qs = questions || [];
@@ -253,7 +266,7 @@ function exportMarpMarkdown(md, questions, withQuiz) {
     });
     if (body === slide || body.replace(/<!--[\s\S]*?-->/g, '').trim()) out.push(body);
   }
-  return (front ? front + '\n\n' : '') + out.join('\n\n---\n\n') + '\n';
+  return localizeSlideUrls((front ? front + '\n\n' : '') + out.join('\n\n---\n\n') + '\n');
 }
 
 // Build the combined navigation sequence for a PDF deck: each page, followed by
@@ -514,4 +527,4 @@ function historyToPrune(names, max) {
   return sorted.slice(0, Math.max(0, sorted.length - max));
 }
 
-module.exports = { toSessionName, sessionSlug, parseArgs, groupSlug, rankHostIps, bestHostIp, isPrivateV4, effectiveKind, validateAnswer, buildDeckSteps, splitMarpSlides, deriveMarpMarkdown, staticQuizSlides, exportMarpMarkdown, mdEscape, pickConverters, normalizeQuiz, validateConfigObject, mergeConfig, historyToPrune, isSafeWidgetSrc, isRemoteWidgetUrl, isPackageRef, CONFIG_FILE, CONFIG_SPEC, QUESTION_TYPES, ANSWER_KINDS, WIDGET_SOURCES, SCALE_MAX_STEPS, WIDGET_MAX_HEIGHT, VIRTUAL_IFACE };
+module.exports = { toSessionName, sessionSlug, parseArgs, groupSlug, rankHostIps, bestHostIp, isPrivateV4, effectiveKind, validateAnswer, buildDeckSteps, splitMarpSlides, deriveMarpMarkdown, staticQuizSlides, exportMarpMarkdown, localizeSlideUrls, mdEscape, pickConverters, normalizeQuiz, validateConfigObject, mergeConfig, historyToPrune, isSafeWidgetSrc, isRemoteWidgetUrl, isPackageRef, CONFIG_FILE, CONFIG_SPEC, QUESTION_TYPES, ANSWER_KINDS, WIDGET_SOURCES, SCALE_MAX_STEPS, WIDGET_MAX_HEIGHT, VIRTUAL_IFACE };

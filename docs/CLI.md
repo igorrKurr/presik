@@ -165,6 +165,8 @@ presik export s01 --with-quiz                      # + questions and answers →
 presik export web-dev/s01 --out handout.pdf --open
 ```
 
+Images work whether the deck links them relative to the session folder (`assets/fig.svg`) or through the server path presik serves them on (`/slides/assets/fig.svg`) — the export rewrites the latter to file paths, since there's no server behind a PDF.
+
 Needs Chrome, Edge or Firefox (set `CHROME_PATH` if Marp can't find it) and the npm install — the single-file binary ships without Marp. For a PowerPoint/Keynote deck, the PDF presik converts on every run is in `.presik/cache/`; a `deck.pdf` is already a PDF.
 
 ---

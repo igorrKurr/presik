@@ -1,6 +1,6 @@
 {
   "name": "presik",
-  "version": "4.6.3",
+  "version": "4.7.0",
   "private": true,
   "description": "Live in-class quizzes for interactive lectures: students answer from their phones, the projector shows the question and result, and arrow keys drive your slides and the quiz in sync. Bring any deck — Marp, PDF, PowerPoint, or Keynote — and presik renders it with the quiz interleaved, in class or over Zoom. Runs locally; the engine is separate from content (courses/slides/questions).",
   "main": "src/server.js",

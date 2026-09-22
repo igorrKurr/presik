@@ -13,7 +13,7 @@
  *   presik s01                    → runs ./s01/ (deck.marp.md + questions.json)
  *   presik web-dev/s01            → a session can live at any depth — it's just a path
  *   presik s01 --dir ~/courses/x  → content root isn't where the command was run from
- *   presik s01 --tunnel           → brings up a public URL via cloudflared
+ *   presik s01 --tunnel           → brings up a public URL via localhost.run (--tunnel=cloudflare: cloudflared)
  *   presik s01 --port 8080 --key myword
  *   presik s01 --group "3-A"      → tags results with a group name (or asks interactively)
  *   presik s01 --no-group         → don't ask for a group name
@@ -33,11 +33,11 @@ const readline = require('readline');
 const { spawn, execFileSync } = require('child_process');
 const QRCode = require('qrcode');
 const { openDb } = require('./db');
-const { groupSlug, sessionSlug, toSessionName, parseArgs, bestHostIp, rankHostIps, effectiveKind, validateAnswer, splitMarpSlides, deriveMarpMarkdown, normalizeQuiz, CONFIG_FILE } = require('./lib');
+const { isServableAsset, groupSlug, sessionSlug, toSessionName, parseArgs, bestHostIp, rankHostIps, effectiveKind, validateAnswer, splitMarpSlides, deriveMarpMarkdown, normalizeQuiz, CONFIG_FILE } = require('./lib');
 const { resolvePackage } = require('./widgets');
 const { readAssetText } = require('./assets');
 const { ensureDeckPdf } = require('./convert');
-const { startTunnel } = require('./tunnel');
+const { startTunnel, resolveProvider, PROVIDERS } = require('./tunnel');
 const { buildReport } = require('./report-data');
 const { loadConfig } = require('./config');
 const { MARP_JS, MARP_AVAILABLE } = require('./marp');
@@ -154,14 +154,29 @@ const HOST_OVERRIDE = setting('host', null); // advertised LAN address (skip aut
 // on the network can hijack a class. Default is now random per run; --key (or
 // "key" in a config file) still lets you pin a memorable one on purpose.
 const KEY_GIVEN = setting('key', null);
-const KEY = KEY_GIVEN || crypto.randomBytes(4).toString('hex');
-const TUNNEL = has('tunnel') || CONFIG.tunnel === true;
+const KEY = KEY_GIVEN || crypto.randomBytes(6).toString('hex');
+// --tunnel → the default provider (localhost.run); --tunnel=cloudflare picks one.
+// `npm run s01 --tunnel` (no `--`) never reaches our argv — npm keeps the flag
+// for itself and only leaves npm_config_tunnel in the env. Honor that too, or
+// the class silently gets a LAN-only QR. Flag, then npm, then config file.
+const TUNNEL_EQ = argv.find((a) => a.startsWith('--tunnel='));
+const TUNNEL_SETTING = TUNNEL_EQ ? TUNNEL_EQ.slice('--tunnel='.length)
+  : has('tunnel') ? true
+  : process.env.npm_config_tunnel != null ? process.env.npm_config_tunnel
+  : CONFIG.tunnel != null ? CONFIG.tunnel : false;
+const TUNNEL = TUNNEL_SETTING !== false && TUNNEL_SETTING !== 'false';
+const TUNNEL_PROVIDER = TUNNEL ? resolveProvider(TUNNEL_SETTING) : null;
+if (TUNNEL && !TUNNEL_PROVIDER) {
+  console.error('\n  Unknown tunnel "' + TUNNEL_SETTING + '" — use --tunnel (localhost.run) or --tunnel=cloudflare.\n');
+  process.exit(1);
+}
 const NO_GROUP = has('no-group') || CONFIG.noGroup === true;
-// Only trust X-Forwarded-For when we're actually behind the cloudflared tunnel
-// (all students then share Cloudflare's edge IP, so the real client IP is in
-// the header). On a plain LAN we ignore it — otherwise a cheater could spoof
-// the header to dodge the per-IP answer limits below.
-const TRUST_PROXY = TUNNEL;
+// Only trust a forwarded client IP on requests that came through a Cloudflare
+// tunnel, whose edge sets CF-Connecting-IP itself. localhost.run passes whatever
+// the client sent straight through, and a LAN request has no proxy at all —
+// trusting a header there would let a cheater spoof it to dodge the per-IP
+// answer limits.
+const TRUST_PROXY = TUNNEL_PROVIDER === 'cloudflare';
 const DB_FILE = cliPath('db') || CONFIG.db || path.join(DATA_DIR, 'data.db');
 let GROUP = setting('group', null);
 
@@ -339,7 +354,8 @@ const STATIC_TYPES = {
   '.gif': 'image/gif', '.webp': 'image/webp', '.avif': 'image/avif', '.css': 'text/css; charset=utf-8',
   '.js': 'application/javascript; charset=utf-8', '.mjs': 'application/javascript; charset=utf-8',
   '.json': 'application/json; charset=utf-8', '.html': 'text/html; charset=utf-8',
-  '.woff': 'font/woff', '.woff2': 'font/woff2', '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.ogg': 'audio/ogg',
+  '.woff': 'font/woff', '.woff2': 'font/woff2', '.ttf': 'font/ttf', '.otf': 'font/otf', '.ico': 'image/x-icon',
+  '.mp3': 'audio/mpeg', '.m4a': 'audio/mp4', '.wav': 'audio/wav', '.ogg': 'audio/ogg',
   // A widget bundle can be a whole WebGL/engine build. `.wasm` MUST be served as
   // application/wasm or the browser refuses to streaming-compile it; the rest are
   // the common 3D/engine asset extensions, so they arrive typed, not as a download.
@@ -347,14 +363,24 @@ const STATIC_TYPES = {
   '.ktx2': 'image/ktx2', '.bin': 'application/octet-stream', '.data': 'application/octet-stream',
   '.mp4': 'video/mp4', '.webm': 'video/webm',
 };
+const STATIC_EXTS = new Set(Object.keys(STATIC_TYPES));
 // Serve one file resolved strictly inside `root` — the ".." guard is what keeps
-// /slides/, /widget/ and /widgetpkg/ from climbing out into the rest of the disk.
+// /slides/, /widget/ and /widgetpkg/ from climbing out into the rest of the disk,
+// and isServableAsset keeps them to assets: the session folder also holds
+// questions.json (the answers) and the deck source, which no key protects here.
 function serveFileFrom(res, root, encodedRel) {
-  const rel = decodeURIComponent(encodedRel);
+  let rel;
+  try {
+    rel = decodeURIComponent(encodedRel);
+  } catch (_) {
+    return send(res, 400, 'text/plain; charset=utf-8', 'bad path');
+  }
   const filePath = path.join(root, rel);
   if (filePath !== root && !filePath.startsWith(root + path.sep)) return send(res, 403, 'text/plain; charset=utf-8', 'forbidden');
+  // 404, not 403: don't confirm that a private file exists.
+  if (!isServableAsset(path.relative(root, filePath), STATIC_EXTS)) return send(res, 404, 'text/plain; charset=utf-8', 'not found');
   if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
-    const type = STATIC_TYPES[path.extname(filePath).toLowerCase()] || 'application/octet-stream';
+    const type = STATIC_TYPES[path.extname(filePath).toLowerCase()];
     // A widget runs in a null-origin sandbox, so it fetches its own assets/wasm
     // cross-origin — allow that (these are public bundle files, no credentials).
     // CORP lets them load under a cross-origin-isolated page; when the session is
@@ -440,21 +466,24 @@ let qrSvg = '';
 // address; under --tunnel we key off the real client IP.
 // On a plain LAN every phone has its own address, so a tight per-IP cap is a
 // real per-student guard against the "loop and POST 500 ids" attack. Behind the
-// tunnel that reasoning inverts: Cloudflare's edge — and usually a single campus
-// NAT behind it — puts the whole class on ONE source IP, so LAN-tight numbers
+// tunnel that reasoning inverts: the tunnel (localhost.run connects from
+// 127.0.0.1) or a single campus NAT behind it puts the whole class on ONE source IP, so LAN-tight numbers
 // would lock every student past the 12th out of their own quiz and throttle the
 // rest to one shared bucket. Size the caps for a lecture hall there; the guard
 // is looser (as anything past the tunnel always is), but a trivial flood still
 // trips it.
-const MAX_CLIENTS_PER_IP = TRUST_PROXY ? 1000 : 12;
-const RATE_BURST = TRUST_PROXY ? 300 : 8; // answers per burst
-const RATE_REFILL_MS = TRUST_PROXY ? 50 : 400; // one token back this often (LAN ~2.5/s)
+// Tunnel requests arrive on their own internal port (see "tunnel" below), so
+// the loose numbers apply to them only; LAN phones keep the tight ones.
+const LIMITS = {
+  lan: { maxClients: 12, burst: 8, refillMs: 400 }, // one token back every 400 ms (~2.5/s)
+  tunnel: { maxClients: 1000, burst: 300, refillMs: 50 },
+};
 const IDLE_IP_MS = 30 * 60 * 1000; // forget a source IP after this long with no answers
 const clientsByIp = new Map(); // ip -> Set(clientId)
 const rateByIp = new Map(); // ip -> { tokens, ts }
 
 function clientIp(req) {
-  if (TRUST_PROXY) {
+  if (req.viaTunnel && TRUST_PROXY) {
     // Cloudflare sets CF-Connecting-IP at its edge, so it's the one client
     // address a student can't forge. X-Forwarded-For is appended to, so its
     // *leftmost* entry is whatever the client sent — worthless for a per-IP cap
@@ -474,20 +503,20 @@ function forgetIdleIps() {
   const cutoff = Date.now() - IDLE_IP_MS;
   for (const [ip, b] of rateByIp) if (b.ts < cutoff) { rateByIp.delete(ip); clientsByIp.delete(ip); }
 }
-function rateOk(ip) {
+function rateOk(ip, lim) {
   const now = Date.now();
   let b = rateByIp.get(ip);
-  if (!b) { b = { tokens: RATE_BURST, ts: now }; rateByIp.set(ip, b); }
-  b.tokens = Math.min(RATE_BURST, b.tokens + (now - b.ts) / RATE_REFILL_MS);
+  if (!b) { b = { tokens: lim.burst, ts: now }; rateByIp.set(ip, b); }
+  b.tokens = Math.min(lim.burst, b.tokens + (now - b.ts) / lim.refillMs);
   b.ts = now;
   if (b.tokens < 1) return false;
   b.tokens -= 1;
   return true;
 }
-function clientAllowed(ip, cid) {
+function clientAllowed(ip, cid, lim) {
   let set = clientsByIp.get(ip);
   if (!set) { set = new Set(); clientsByIp.set(ip, set); }
-  if (!set.has(cid) && set.size >= MAX_CLIENTS_PER_IP) return false;
+  if (!set.has(cid) && set.size >= lim.maxClients) return false;
   set.add(cid);
   return true;
 }
@@ -743,10 +772,42 @@ const readBody = (req, limit = 8000) =>
     req.on('error', () => resolve({}));
   });
 
-const server = http.createServer(async (req, res) => {
+// ---------------------------------------------------------------- teacher key
+// Teacher surfaces (control, editor, report, export, live distribution) are
+// for the laptop and the LAN only. A request that came through the tunnel never
+// counts as the teacher, even with the right key — so the key never has to
+// cross the tunnel provider, and a leaked key is useless from the internet.
+// On the LAN, wrong guesses are throttled per address.
+const TEACHER_PATHS = new Set(['/host', '/report', '/report/', '/api/report', '/api/control', '/api/export', '/edit', '/edit/']);
+const isTeacherPath = (p) => TEACHER_PATHS.has(p) || p.startsWith('/api/edit/');
+const KEY_MAX_FAILS = 20; // wrong keys per address…
+const KEY_FAIL_WINDOW_MS = 15 * 60 * 1000; // …per this window, then every key attempt is refused until it passes
+const keyFails = new Map(); // ip -> { n, since }
+function keyMatches(given) {
+  const a = Buffer.from(String(given));
+  const b = Buffer.from(KEY);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+function checkKey(given, req) {
+  if (given == null || given === '' || req.viaTunnel) return false;
+  const ip = clientIp(req);
+  const now = Date.now();
+  let f = keyFails.get(ip);
+  if (f && now - f.since > KEY_FAIL_WINDOW_MS) (keyFails.delete(ip), (f = null));
+  if (f && f.n >= KEY_MAX_FAILS) return false;
+  if (keyMatches(given)) return true;
+  if (!f) keyFails.set(ip, (f = { n: 0, since: now }));
+  f.n++;
+  return false;
+}
+
+async function handle(req, res) {
   const url = new URL(req.url, 'http://x');
   const p = url.pathname;
-  const isHost = url.searchParams.get('key') === KEY;
+  if (req.viaTunnel && isTeacherPath(p))
+    return send(res, 403, 'text/plain; charset=utf-8',
+      'Teacher pages are not available over the tunnel. Open them on the laptop running presik (or on the same Wi-Fi) — see the links it printed.');
+  const isHost = checkKey(url.searchParams.get('key'), req);
 
   // The student page opts into cross-origin isolation only when the session has
   // an isolate widget — otherwise COOP/COEP would needlessly constrain what an
@@ -900,9 +961,12 @@ const server = http.createServer(async (req, res) => {
     if (val == null) return send(res, 422, 'application/json', '{"ok":false}');
     const cid = String(clientId == null ? '' : clientId).slice(0, 64);
     if (!cid) return send(res, 422, 'application/json', '{"ok":false}');
-    const ip = clientIp(req);
+    // Namespaced by channel: through localhost.run every student shares
+    // 127.0.0.1, which must not eat into the LAN's bucket for the same address.
+    const ip = (req.viaTunnel ? 'tunnel:' : '') + clientIp(req);
+    const lim = req.viaTunnel ? LIMITS.tunnel : LIMITS.lan;
     forgetIdleIps();
-    if (!rateOk(ip) || !clientAllowed(ip, cid)) return send(res, 429, 'application/json', '{"ok":false}');
+    if (!rateOk(ip, lim) || !clientAllowed(ip, cid, lim)) return send(res, 429, 'application/json', '{"ok":false}');
     if (!answers.has(qid)) answers.set(qid, new Map());
     answers.get(qid).set(cid, val);
     persistAnswer(q, cid, val);
@@ -914,7 +978,7 @@ const server = http.createServer(async (req, res) => {
   if (p === '/api/control' && req.method === 'POST') {
     const body = await readBody(req);
     const { action, key, to } = body;
-    if (key !== KEY) return send(res, 403, 'application/json', '{"ok":false}');
+    if (!checkKey(key, req)) return send(res, 403, 'application/json', '{"ok":false}');
     const last = quiz.questions.length - 1;
     if (action === 'next' && state.index < last) (state.index++, (state.revealed = false));
     else if (action === 'prev' && state.index > -1) (state.index--, (state.revealed = false));
@@ -1012,7 +1076,8 @@ const server = http.createServer(async (req, res) => {
   }
 
   send(res, 404, 'text/plain; charset=utf-8', 'not found');
-});
+}
+const server = http.createServer(handle);
 
 function exportData() {
   return {
@@ -1095,6 +1160,9 @@ async function setJoinUrl(url) {
   broadcast();
 }
 
+let tunnelUp = false; // the join URL is the tunnel's
+let lanBase = ''; // http://<lan-ip>:<port>, for the teacher links while tunneled
+
 function banner() {
   console.log('\n  presik v' + VERSION);
   console.log(
@@ -1102,12 +1170,15 @@ function banner() {
       '  ·  questions: ' + quiz.questions.length + (GROUP ? '  ·  group: ' + GROUP : '')
   );
   const base = joinUrl.replace(/\/$/, ''); // no trailing slash before the path we append
+  // Teacher links never point at the tunnel: it refuses them (see checkKey), and
+  // the key shouldn't travel through the tunnel provider anyway.
+  const teacherBase = tunnelUp ? lanBase : base;
   console.log('\n  Students:  ' + joinUrl);
-  console.log('  Teacher:   ' + base + '/host?key=' + KEY + '  (control + live view — keep private)');
-  console.log('  Editor:    ' + base + '/edit?key=' + KEY + '  (write the questions — keep private)');
-  console.log('  Report:    ' + base + '/report?key=' + KEY + '  (analytics across runs/groups/courses — keep private)');
-  if (deckType === 'marp' && MARP_AVAILABLE) console.log('  Slides:    ' + base + '/slides?key=' + KEY + '  (without ?key= — view only, no control)');
-  else if (deckType === 'pdf') console.log('  Slides:    ' + base + '/slides?key=' + KEY + '  (PDF deck; without ?key= — view only)');
+  console.log('  Teacher:   ' + teacherBase + '/host?key=' + KEY + '  (control + live view — keep private)');
+  console.log('  Editor:    ' + teacherBase + '/edit?key=' + KEY + '  (write the questions — keep private)');
+  console.log('  Report:    ' + teacherBase + '/report?key=' + KEY + '  (analytics across runs/groups/courses — keep private)');
+  if (deckType === 'marp' && MARP_AVAILABLE) console.log('  Slides:    ' + teacherBase + '/slides?key=' + KEY + '  (without ?key= — view only, no control)');
+  else if (deckType === 'pdf') console.log('  Slides:    ' + teacherBase + '/slides?key=' + KEY + '  (PDF deck; without ?key= — view only)');
   else if (deckType === 'marp') console.log('  Slides:    (deck.marp.md found, but Marp isn\'t in this build — use a PDF deck, or: npm i @marp-team/marp-cli)');
   if (!deckType) console.log('  Projector: ' + base + '/present  (QR + live results — questions-only session)');
   if (!KEY_GIVEN)
@@ -1177,7 +1248,8 @@ server.on('error', (e) => {
   }
 
   server.listen(PORT, async () => {
-    await setJoinUrl('http://' + localIp() + ':' + PORT + '/');
+    lanBase = 'http://' + localIp() + ':' + PORT;
+    await setJoinUrl(lanBase + '/');
 
     if (OPEN_EDITOR) openBrowser('http://localhost:' + PORT + '/edit?key=' + encodeURIComponent(KEY));
 
@@ -1186,17 +1258,44 @@ server.on('error', (e) => {
       return;
     }
 
-    console.log('\n  Bringing up a tunnel via cloudflared — waiting until it is reachable before showing the link…');
-    const t = await startTunnel(PORT);
-    if (t.proc) process.on('exit', () => t.proc.kill());
+    // The tunnel gets its own listener on a loopback-only port, so "came through
+    // the tunnel" is a fact about the socket rather than a guess from headers
+    // (which localhost.run passes through from the client untouched). Requests
+    // on it are students-only: see checkKey and isTeacherPath.
+    const tunnelServer = http.createServer((req, res) => {
+      req.viaTunnel = true;
+      return handle(req, res);
+    });
+    await new Promise((resolve, reject) => tunnelServer.once('error', reject).listen(0, '127.0.0.1', resolve));
+    const tunnelPort = tunnelServer.address().port;
+
+    const label = PROVIDERS[TUNNEL_PROVIDER].label;
+    console.log('\n  Bringing up a tunnel via ' + label + ' — waiting until it is reachable before showing the link…');
+    const tunnel = startTunnel(tunnelPort, {
+      provider: TUNNEL_PROVIDER,
+      // The address can change on reconnect (localhost.run's free tier). Open
+      // pages pick the new QR up from the next snapshot; students already in
+      // need the new link.
+      onUrl: async (url, changed) => {
+        if (!changed) return console.log('  Tunnel reconnected — same address, students can carry on.');
+        await setJoinUrl(url);
+        console.log('\n  Tunnel is back on a NEW address — the QR on screen is updated.\n  Students:  ' + url + '\n');
+      },
+      onDown: (msg) => console.log('\n  ' + msg),
+    });
+    process.on('exit', tunnel.stop);
+    const t = await tunnel.first;
     if (t.url) {
+      tunnelUp = true;
       await setJoinUrl(t.url);
       if (!t.verified)
         console.log('  Could not confirm the tunnel is reachable yet — if students can\'t connect, wait a minute and retry.');
     } else {
-      t.proc.kill();
+      tunnel.stop();
+      tunnelServer.close();
       console.log('  ' + t.reason + ' — staying on the local network.');
-      if (t.log.length) console.log('  cloudflared said:\n    ' + t.log.join('\n    '));
+      if (t.log.length) console.log('  ' + label + ' said:\n    ' + t.log.join('\n    '));
+      console.log('  Try the other tunnel: ' + (TUNNEL_PROVIDER === 'cloudflare' ? '--tunnel (localhost.run)' : '--tunnel=cloudflare (needs cloudflared)'));
     }
     banner();
   });

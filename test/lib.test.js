@@ -267,7 +267,9 @@ test('validateConfigObject: types, unknown keys, and the CLI-only ones', () => {
   assert.deepStrictEqual(validateConfigObject({ group: null }, 'f'), []); // null reads as "not set"
   assert.match(validateConfigObject({ port: '8080' }, 'f').join(), /whole number/);
   assert.match(validateConfigObject({ port: 99999 }, 'f').join(), /between 1 and 65535/);
-  assert.match(validateConfigObject({ tunnel: 'yes' }, 'f').join(), /true or false/);
+  assert.match(validateConfigObject({ tunnel: 'yes' }, 'f').join(), /localhost\.run/);
+  assert.deepStrictEqual(validateConfigObject({ tunnel: 'cloudflare' }, 'f'), []);
+  assert.deepStrictEqual(validateConfigObject({ tunnel: 'localhost.run' }, 'f'), []);
   assert.match(validateConfigObject({ nope: 1 }, 'f').join(), /unknown setting/);
   assert.match(validateConfigObject({ dir: '/x' }, 'f').join(), /command line/); // would be circular
   assert.match(validateConfigObject([], 'f').join(), /JSON object/);
@@ -382,4 +384,23 @@ test('localizeSlideUrls: server /slides/ asset links become session-relative, pr
 
 test('exportMarpMarkdown: rewrites /slides/ image links for a server-less PDF', () => {
   assert.match(exportMarpMarkdown('# A\n\n![w:900](/slides/assets/f.svg)\n', [], false), /!\[w:900\]\(\.\/assets\/f\.svg\)/);
+});
+
+test('isServableAsset: assets only — never answers, config, deck source or hidden files', () => {
+  const { isServableAsset } = require('../src/lib');
+  const exts = new Set(['.svg', '.png', '.json', '.js', '.html', '.wasm']);
+  assert.strictEqual(isServableAsset('assets/fig-5-1.svg', exts), true);
+  assert.strictEqual(isServableAsset('widgets/game/index.html', exts), true);
+  assert.strictEqual(isServableAsset('widgets/game/data.json', exts), true); // a widget's own data is fine
+  assert.strictEqual(isServableAsset('questions.json', exts), false); // holds the answers
+  assert.strictEqual(isServableAsset('Questions.JSON', exts), false);
+  assert.strictEqual(isServableAsset('sub/presik.config.json', exts), false);
+  assert.strictEqual(isServableAsset('deck.marp.md', exts), false); // not an asset type
+  assert.strictEqual(isServableAsset('deck.key', exts), false);
+  assert.strictEqual(isServableAsset('.deck.build.md', exts), false);
+  assert.strictEqual(isServableAsset('.presik/data.db', exts), false);
+  assert.strictEqual(isServableAsset('assets/.secret.png', exts), false);
+  assert.strictEqual(isServableAsset('a\\.git\\x.js', exts), false); // Windows separators
+  assert.strictEqual(isServableAsset('', exts), false);
+  assert.strictEqual(isServableAsset('noext', exts), false);
 });

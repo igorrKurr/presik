@@ -64,10 +64,11 @@ A deck can be `deck.marp.md` (needs the Marp optional dependency — not in the 
 | `--dir` | path | current directory | Content root. The only setting `presik.config.json` can't set. |
 | `--port` | number | `3000` | HTTP port. If it's taken, presik suggests the next one. |
 | `--host` | IP address | auto-detected | LAN address advertised in the links and QR. Auto-detection skips VPN/virtual interfaces; use this when students can't reach the printed link. |
-| `--key` | word | random each run | Teacher key guarding `/host`, `/slides` control, `/report` and `/edit`. Pin one to reuse links across a course. |
+| `--key` | word | random each run (12 hex chars) | Teacher key guarding `/host`, `/slides` control, `/report` and `/edit`. Pin one to reuse links across a course. 20 wrong guesses from one address lock that address out for 15 min. Never accepted through `--tunnel`. |
 | `--group` | name | asked interactively | Group/cohort tag stored with every answer of this run. |
 | `--no-group` | — | off | Don't ask for a group. (Also skipped automatically when stdin isn't a terminal.) |
-| `--tunnel` | — | off | Expose a public `https://…trycloudflare.com` URL via `cloudflared` and point the QR at it. Needs `cloudflared` on `PATH`; without it presik stays on the LAN. |
+| `--tunnel` | — | off | Expose a public `https://…lhr.life` URL via [localhost.run](https://localhost.run) (over `ssh`, nothing to install) and point the QR at it. The link appears once it's reachable; if the connection drops presik reconnects, and updates the QR if the address changed. If the tunnel can't come up, presik stays on the LAN. Only the student side answers through the tunnel: teacher pages and APIs return 403 there even with the key, so the printed teacher links use the LAN address. |
+| `--tunnel=cloudflare` | — | — | The same via a `cloudflared` quick tunnel on `trycloudflare.com` (needs `cloudflared` on `PATH`). Some mobile carriers block `trycloudflare.com` — students' pages then just hang — which is why it isn't the default. |
 | `--qr` | file path | `<session>/join-qr.svg` | Where to write the join-QR SVG. |
 | `--db` | file path | `<content-root>/.presik/data.db` | SQLite database answers are written to. |
 | `-h`, `--help` | — | — | Show help for this command. |
@@ -82,6 +83,7 @@ presik s01 --port 8080 --key myword      # fixed port and a memorable key
 presik s01 --host 192.168.1.42           # advertise a specific LAN address
 presik s01 --dir ~/courses/web-dev       # content root elsewhere
 presik s01 --tunnel                      # students join over the internet (e.g. a Zoom class)
+presik s01 --tunnel=cloudflare           # … via cloudflared instead of localhost.run
 presik s01 --no-group --db /tmp/test.db  # a throwaway rehearsal
 ```
 
@@ -256,7 +258,7 @@ Optional JSON file holding defaults for the [run options](#options), so you don'
 | `key` | string | `--key` |
 | `group` | string | `--group` |
 | `noGroup` | boolean | `--no-group` |
-| `tunnel` | boolean | `--tunnel` |
+| `tunnel` | `true`, `"localhost.run"` or `"cloudflare"` | `--tunnel[=…]` |
 | `qr` | path | `--qr` |
 | `db` | path | `--db` |
 

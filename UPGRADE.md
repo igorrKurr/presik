@@ -1,3 +1,14 @@
+# v4.7.0: `--tunnel` now uses localhost.run, tighter security
+
+Nothing to change in your content.
+
+- **Security fix (all setups):** `/slides/…` and `/widget/…` used to serve *any* file in the session folder without a key — including `questions.json`, i.e. every correct answer, hint and explanation. They now serve only asset types (images, fonts, CSS, media, widget bundles) and never hidden files, `questions.json`, `presik.config.json` or the deck source. If a slide linked some other file type from the session folder, it now 404s.
+- **Teacher pages stay off the tunnel.** With `--tunnel`, `/host`, `/edit`, `/report`, slide control and export refuse requests that arrive through the tunnel, even with the right key; the printed teacher links use your LAN address. Open them on the laptop or the same Wi-Fi.
+- **Key:** the random default is now 12 hex characters, and 20 wrong guesses from one address lock it out of teacher pages for 15 minutes.
+- **Tunnel:** **`--tunnel` now brings up the public URL via [localhost.run](https://localhost.run)** (over `ssh`, nothing to install) instead of cloudflared. Some mobile carriers block `trycloudflare.com` — students' pages just hang — so it's no longer the default. To keep using cloudflared, run `--tunnel=cloudflare`, or set `"tunnel": "cloudflare"` in `presik.config.json` (`"tunnel": true` means localhost.run now).
+
+---
+
 # From v3 → v4.0.0: no native module, random key, tougher runtime
 
 v4 is an **engine-only** change — your `questions.json` / `deck.marp.md` are untouched, and the SQLite database is picked up as-is (its schema grows itself). But two things change how you run it:

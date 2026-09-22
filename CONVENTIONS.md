@@ -266,7 +266,7 @@ presik <session> --host 192.168.1.42  # advertised LAN address (default: auto-de
 presik <session> --key myword     # teacher key (default: random per run — see below)
 presik <session> --group "3-A"    # group tag; without it — an interactive prompt in the terminal
 presik <session> --no-group       # don't ask for a group name
-presik <session> --tunnel         # public URL via cloudflared
+presik <session> --tunnel         # public URL via localhost.run (--tunnel=cloudflare: cloudflared)
 presik <session> --qr path.svg    # where to write join-qr.svg (default — the session folder)
 presik <session> --db path.db     # where the database is (default — .presik/data.db)
 ```

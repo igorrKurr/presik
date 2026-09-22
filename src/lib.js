@@ -463,6 +463,24 @@ function normalizeQuiz(raw, sessionName) {
   return { quiz: Object.assign({}, raw, { title: raw.title || null, questions }), errors, warnings };
 }
 
+const { resolveProvider } = require('./tunnel');
+
+// ---------------------------------------------------------------- served files
+// What /slides/, /widget/ and /widgetpkg/ may hand out: only the asset types a
+// deck or widget actually loads (`exts`), never anything hidden (.presik/,
+// .deck.build.md, .git) and never the session's own data — questions.json holds
+// the answers, and it sits right next to the slide images. Markdown (the deck
+// source) and office/Keynote sources simply aren't asset types.
+const PRIVATE_FILES = new Set(['questions.json', 'presik.config.json']);
+function isServableAsset(rel, exts) {
+  const parts = String(rel == null ? '' : rel).split(/[\\/]+/).filter(Boolean);
+  if (!parts.length || parts.some((seg) => seg.startsWith('.'))) return false;
+  const base = parts[parts.length - 1].toLowerCase();
+  if (PRIVATE_FILES.has(base)) return false;
+  const dot = base.lastIndexOf('.');
+  return dot > 0 && exts.has(base.slice(dot));
+}
+
 // ---------------------------------------------------------------- config file
 // presik.config.json — optional, and deliberately nothing more than "the flags
 // you'd have typed". Same keys as the flags, so there's one thing to learn; a
@@ -475,7 +493,7 @@ const CONFIG_SPEC = {
   key: 'string',
   group: 'string',
   noGroup: 'boolean',
-  tunnel: 'boolean',
+  tunnel: 'tunnel', // true (localhost.run), false, or a provider name
   qr: 'path',
   db: 'path',
 };
@@ -503,6 +521,9 @@ function validateConfigObject(obj, where) {
       else if (k === 'port' && (v < 1 || v > 65535)) errors.push(at + '"port" must be between 1 and 65535');
     } else if (kind === 'boolean') {
       if (typeof v !== 'boolean') errors.push(at + '"' + k + '" must be true or false');
+    } else if (kind === 'tunnel') {
+      if (typeof v !== 'boolean' && !(typeof v === 'string' && resolveProvider(v)))
+        errors.push(at + '"' + k + '" must be true, false, "localhost.run" or "cloudflare"');
     } else if (typeof v !== 'string' || !v.trim()) {
       errors.push(at + '"' + k + '" must be a non-empty string');
     }
@@ -527,4 +548,4 @@ function historyToPrune(names, max) {
   return sorted.slice(0, Math.max(0, sorted.length - max));
 }
 
-module.exports = { toSessionName, sessionSlug, parseArgs, groupSlug, rankHostIps, bestHostIp, isPrivateV4, effectiveKind, validateAnswer, buildDeckSteps, splitMarpSlides, deriveMarpMarkdown, staticQuizSlides, exportMarpMarkdown, localizeSlideUrls, mdEscape, pickConverters, normalizeQuiz, validateConfigObject, mergeConfig, historyToPrune, isSafeWidgetSrc, isRemoteWidgetUrl, isPackageRef, CONFIG_FILE, CONFIG_SPEC, QUESTION_TYPES, ANSWER_KINDS, WIDGET_SOURCES, SCALE_MAX_STEPS, WIDGET_MAX_HEIGHT, VIRTUAL_IFACE };
+module.exports = { isServableAsset, toSessionName, sessionSlug, parseArgs, groupSlug, rankHostIps, bestHostIp, isPrivateV4, effectiveKind, validateAnswer, buildDeckSteps, splitMarpSlides, deriveMarpMarkdown, staticQuizSlides, exportMarpMarkdown, localizeSlideUrls, mdEscape, pickConverters, normalizeQuiz, validateConfigObject, mergeConfig, historyToPrune, isSafeWidgetSrc, isRemoteWidgetUrl, isPackageRef, CONFIG_FILE, CONFIG_SPEC, QUESTION_TYPES, ANSWER_KINDS, WIDGET_SOURCES, SCALE_MAX_STEPS, WIDGET_MAX_HEIGHT, VIRTUAL_IFACE };

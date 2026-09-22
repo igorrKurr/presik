@@ -106,7 +106,7 @@ Then it prints the addresses you'll open — this is your map for the whole clas
 ```
 
 - The **`Slides:` line appears when the session has a deck** — `deck.marp.md` (needs Marp) or `deck.pdf`. A **questions-only** session shows a `Projector:` line (`/present`) instead — a stand-alone view with the QR + live results.
-- The **teacher key is random every run**. It's what stops anyone else on the Wi-Fi from driving or resetting your class, so treat the `/host` and `/slides` links as private. Want a stable one (e.g. reused across a course)? Pass `--key yourword`.
+- The **teacher key is random every run**. It's what stops anyone else on the Wi-Fi from driving or resetting your class, so treat the `/host` and `/slides` links as private. Want a stable one (e.g. reused across a course)? Pass `--key yourword` — pick something long. Wrong keys are throttled: after 20 bad guesses from one address, that address is locked out of teacher pages for 15 minutes.
 - If students get a link they can't reach (a VPN or Docker network can hijack the auto-detected address), pass `--host 192.168.x.x` with your real LAN address — the terminal hints at this when it sees more than one candidate.
 
 All flags (`--dir`, `--port`, `--key`, `--host`, `--group`, `--tunnel`, `--qr`, `--db`) — run `presik help run`, or see the full CLI reference in [`docs/CLI.md`](docs/CLI.md).
@@ -208,7 +208,9 @@ This asymmetry is the whole point: the room can't vote with the majority, and yo
 University Wi-Fi often isolates clients, so phones can't reach your laptop. Options:
 
 - **Share a hotspot from your phone** and connect your laptop to it. Simplest, always works.
-- **`presik s01 --tunnel`** — brings up a public `https://…trycloudflare.com` URL via [cloudflared](https://developers.cloudflare.com/cloudflare-tunnel/) and points the QR at it. Needs `cloudflared` installed; if it's missing, presik just stays on the local network. The link appears once the tunnel is actually reachable (usually 10–30 s) — handing it out earlier lets phones cache the not-yet-existing hostname as dead for up to 30 minutes.
+- **`presik s01 --tunnel`** — brings up a public `https://…lhr.life` URL via [localhost.run](https://localhost.run) and points the QR at it. It runs over `ssh`, so there's nothing to install and no account. The link appears once the tunnel is actually reachable; if the connection drops, presik reconnects (and updates the QR if the address changed). With npm scripts, both `npm run s01 -- --tunnel` and `npm run s01 --tunnel` work.
+- **What the tunnel exposes:** only the student side — joining, answering, the view-only slides and the QR. Teacher pages (`/host`, `/edit`, `/report`, slide control, export) refuse requests that come through the tunnel **even with the right key**, so the printed Teacher/Editor/Slides links point at your LAN address instead. Open them on the laptop (or a device on the same Wi-Fi); the key never travels through the tunnel provider. With a Zoom class you're on the laptop anyway.
+- **`presik s01 --tunnel=cloudflare`** — the same via a [cloudflared](https://developers.cloudflare.com/cloudflare-tunnel/) quick tunnel on `trycloudflare.com` (needs `cloudflared` installed). Heads-up: some mobile carriers block `trycloudflare.com` — students' pages just hang — so check it from a phone on mobile data first.
 
 ---
 

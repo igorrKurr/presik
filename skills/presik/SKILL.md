@@ -47,7 +47,9 @@ presik is for *formative* feedback — finding out whether it's safe to move on 
 presik <session> --group "3-A"            # prints Students/Teacher/Slides/Editor links
 presik <session> --key web-dev-2026       # stable teacher key instead of a random one
 presik <session> --port 8080 --host 192.168.1.42
-presik <session> --tunnel                 # public URL via cloudflared (remote/Zoom students)
+presik <session> --tunnel                 # public URL via localhost.run over ssh (remote/Zoom students)
+presik <session> --tunnel=cloudflare      # … via cloudflared instead (some carriers block trycloudflare.com)
+# With --tunnel, teacher pages (/host, /edit, /report, slides control) work only on the laptop/LAN — never through the tunnel.
 presik edit <session>                     # browser editor for questions.json
 presik export <session>                   # Marp deck → PDF, quiz slides left out
 presik export <session> --with-quiz       # … with static question + answer slides (no hints)

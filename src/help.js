@@ -70,7 +70,8 @@ const TOPICS = {
       ['--key <word>', 'teacher key for /host, /slides, /report, /edit (default: random each run)'],
       ['--group <name>', 'tag this run\'s results with a group/cohort (default: asked interactively)'],
       ['--no-group', 'don\'t ask for a group name'],
-      ['--tunnel', 'public https URL via cloudflared (needs cloudflared installed)'],
+      ['--tunnel', 'public https URL via localhost.run (uses ssh — nothing to install)'],
+      ['--tunnel=cloudflare', 'the same via cloudflared / trycloudflare.com (needs cloudflared)'],
       ['--qr <file.svg>', 'where to write the join QR (default: <session>/join-qr.svg)'],
       ['--db <file.db>', 'answers database (default: <content-root>/.presik/data.db)'],
       ['-h, --help', 'show this help'],
@@ -207,7 +208,7 @@ const TOPICS = {
       ['key', 'string    same as --key'],
       ['group', 'string    same as --group'],
       ['noGroup', 'boolean   same as --no-group'],
-      ['tunnel', 'boolean   same as --tunnel'],
+      ['tunnel', 'true | "localhost.run" | "cloudflare"   same as --tunnel[=…]'],
       ['qr', 'path      same as --qr (relative to the config file)'],
       ['db', 'path      same as --db (relative to the config file)'],
     ])) +
